@@ -25,6 +25,9 @@ __pycache__/
 # vercel
 .vercel/
 
+# turborepo
+.turbo/
+
 # os / editor
 .DS_Store
 *.log

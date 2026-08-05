@@ -9,12 +9,16 @@
   },
   "scripts": {
     "web:dev": "pnpm --filter web dev",
-    "web:build": "pnpm --filter web build",
+    "web:build": "turbo run build --filter=web",
     "server:dev": "pnpm --filter server start:dev",
-    "server:build": "pnpm --filter server build",
-    "dev": "pnpm -r --parallel run dev",
-    "test": "pnpm -r run test",
-    "lint": "pnpm -r run lint",
-    "type-check": "pnpm -r run type-check"
+    "server:build": "turbo run build --filter=server",
+    "build": "turbo run build",
+    "dev": "turbo run dev",
+    "test": "turbo run test",
+    "lint": "turbo run lint",
+    "type-check": "turbo run type-check"
+  },
+  "devDependencies": {
+    "turbo": "^2.3.3"
   }
 }
