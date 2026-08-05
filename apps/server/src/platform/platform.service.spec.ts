@@ -17,14 +17,16 @@ describe('PlatformService', () => {
 
   beforeEach(() => findMany.mockReset());
 
-  it('lists only enabled platforms ordered by createdAt', async () => {
-    findMany.mockResolvedValue([{ key: 'instagram', name: 'Instagram' }]);
+  it('lists all platforms (enabled first) so disabled ones can be greyed', async () => {
+    findMany.mockResolvedValue([
+      { key: 'instagram', name: 'Instagram', enabled: true },
+      { key: 'facebook', name: 'Facebook', enabled: false },
+    ]);
     const service = await build();
     const res = await service.list();
-    expect(res).toHaveLength(1);
+    expect(res).toHaveLength(2);
     expect(findMany).toHaveBeenCalledWith({
-      where: { enabled: true },
-      orderBy: { createdAt: 'asc' },
+      orderBy: [{ enabled: 'desc' }, { createdAt: 'asc' }],
     });
   });
 });

@@ -5,7 +5,7 @@ const prisma = new PrismaClient();
 // 内置平台。新增平台在此追加一行(并在 crawler 侧实现适配器)。
 const PLATFORMS = [
   { key: 'instagram', name: 'Instagram', enabled: true },
-  // { key: 'tiktok', name: 'TikTok', enabled: false },
+  { key: 'facebook', name: 'Facebook', enabled: false }, // 未支持,前端置灰
 ];
 
 async function main() {
