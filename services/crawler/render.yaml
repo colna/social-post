@@ -1,0 +1,17 @@
+# Render Blueprint —— 一键部署爬虫服务(Docker)
+# 在 Render 控制台 New → Blueprint,指向本仓库,Root Directory 设为 services/crawler
+services:
+  - type: web
+    name: social-post-crawler
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    plan: starter
+    healthCheckPath: /health
+    envVars:
+      - key: CRAWLER_TOKEN
+        sync: false # 部署时在面板填,与 server 端一致
+      - key: IG_COOKIE
+        sync: false # 运营 IG 登录 cookie
+      - key: SCRAPLING_MODE
+        value: fetch

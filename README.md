@@ -38,6 +38,10 @@ pnpm server:dev
 pnpm web:dev
 ```
 
+## 部署
+
+见 [`docs/05-部署.md`](docs/05-部署.md):web + server 上 Vercel(各自 `vercel.json`,Root Directory 分别设 `apps/web` / `apps/server`),crawler 上 Railway/Render(Dockerfile / `render.yaml`),DB 用 Neon。
+
 ## 环境变量
 
 见 [`.env.example`](.env.example)。核心:`DATABASE_URL`(Neon)、`IG_COOKIE`(运营 IG 登录 cookie)、`CRAWLER_TOKEN`(server↔crawler 共享密钥)、`UMI_APP_API_BASE`。

@@ -18,4 +18,5 @@ COPY app ./app
 
 EXPOSE 8000
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# shell 形式,让 Render/Railway 注入的 $PORT 生效(本地无该变量则回退 8000)
+CMD uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}
