@@ -1,0 +1,20 @@
+{
+  "name": "social-post",
+  "version": "0.1.0",
+  "private": true,
+  "description": "可扩展的社媒帖子采集平台(首期 Instagram)",
+  "packageManager": "pnpm@10.33.0",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "web:dev": "pnpm --filter web dev",
+    "web:build": "pnpm --filter web build",
+    "server:dev": "pnpm --filter server start:dev",
+    "server:build": "pnpm --filter server build",
+    "dev": "pnpm -r --parallel run dev",
+    "test": "pnpm -r run test",
+    "lint": "pnpm -r run lint",
+    "type-check": "pnpm -r run type-check"
+  }
+}

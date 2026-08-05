@@ -1,0 +1,31 @@
+# deps
+node_modules/
+.pnpm-store/
+
+# builds
+dist/
+.umi/
+.umi-production/
+apps/web/src/.umi/
+apps/server/prisma/generated/
+
+# env
+.env
+.env.local
+.env.*.local
+*.env
+
+# python
+services/crawler/.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+
+# vercel
+.vercel/
+
+# os / editor
+.DS_Store
+*.log
+coverage/
