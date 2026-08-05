@@ -1,0 +1,68 @@
+// social-post 数据模型
+// 平台可扩展:新增平台 = Platform 加一行 + crawler 加适配器,无需改上层。
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Platform {
+  id        String   @id @default(cuid())
+  key       String   @unique // "instagram"
+  name      String // "Instagram"
+  enabled   Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  accounts Account[]
+}
+
+model Account {
+  id             String    @id @default(cuid())
+  platformKey    String
+  handle         String // username,如 "nasa"
+  displayName    String?
+  avatarUrl      String?
+  bio            String?
+  followerCount  Int?
+  followingCount Int?
+  mediaCount     Int?
+  isVerified     Boolean   @default(false)
+  isPrivate      Boolean   @default(false)
+  externalUrl    String?
+  externalId     String? // 平台侧用户 id
+  lastCrawledAt  DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  platform Platform @relation(fields: [platformKey], references: [key])
+  posts    Post[]
+
+  @@unique([platformKey, handle])
+  @@index([platformKey])
+}
+
+model Post {
+  id           String    @id @default(cuid())
+  accountId    String
+  platformKey  String
+  shortcode    String // 平台侧帖子唯一码
+  url          String
+  type         String // image | video | carousel | reel
+  coverUrl     String // 封面图
+  caption      String? // 完整文案
+  likeCount    Int?
+  commentCount Int?
+  takenAt      DateTime? // 发布时间
+  raw          Json? // 原始节点,便于后续扩展
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@unique([platformKey, shortcode])
+  @@index([accountId])
+}
