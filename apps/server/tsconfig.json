@@ -20,6 +20,6 @@
     "esModuleInterop": true,
     "resolveJsonModule": true
   },
-  "include": ["src", "prisma", "api"],
+  "include": ["src", "prisma"],
   "exclude": ["node_modules", "dist"]
 }
