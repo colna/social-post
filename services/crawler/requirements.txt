@@ -1,0 +1,8 @@
+fastapi>=0.110,<1.0
+uvicorn[standard]>=0.27,<1.0
+pydantic>=2.5,<3.0
+httpx>=0.27
+# 仅 Python <3.11 需要:让 pydantic v2 能 eval `X | None` 联合类型语法;3.11+ 原生支持
+eval_type_backport>=0.2; python_version < "3.11"
+# 生产抓取依赖;测试环境不安装(fetcher 延迟 import)
+scrapling>=0.2

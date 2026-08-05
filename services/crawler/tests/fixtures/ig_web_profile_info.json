@@ -1,0 +1,71 @@
+{
+  "data": {
+    "user": {
+      "id": "25025320",
+      "username": "sample_creator",
+      "full_name": "Sample Creator",
+      "biography": "Traveler. Coffee lover. 🌍",
+      "profile_pic_url": "https://scontent.cdninstagram.com/pic_lo.jpg",
+      "profile_pic_url_hd": "https://scontent.cdninstagram.com/pic_hd.jpg",
+      "external_url": "https://example.com/sample",
+      "is_verified": true,
+      "is_private": false,
+      "edge_followed_by": { "count": 1234567 },
+      "edge_follow": { "count": 321 },
+      "edge_owner_to_timeline_media": {
+        "count": 987,
+        "edges": [
+          {
+            "node": {
+              "__typename": "GraphImage",
+              "id": "3001",
+              "shortcode": "CimgABC001",
+              "display_url": "https://scontent.cdninstagram.com/img001.jpg",
+              "is_video": false,
+              "taken_at_timestamp": 1700000000,
+              "edge_media_to_caption": {
+                "edges": [
+                  { "node": { "text": "A single photo caption" } }
+                ]
+              },
+              "edge_liked_by": { "count": 5000 },
+              "edge_media_preview_like": { "count": 4990 },
+              "edge_media_to_comment": { "count": 120 }
+            }
+          },
+          {
+            "node": {
+              "__typename": "GraphVideo",
+              "id": "3002",
+              "shortcode": "CvidXYZ002",
+              "display_url": "https://scontent.cdninstagram.com/reel002.jpg",
+              "is_video": true,
+              "product_type": "clips",
+              "taken_at_timestamp": 1700100000,
+              "edge_media_to_caption": {
+                "edges": [
+                  { "node": { "text": "My reel caption #fun" } }
+                ]
+              },
+              "edge_media_preview_like": { "count": 8800 },
+              "edge_media_to_comment": { "count": 240 }
+            }
+          },
+          {
+            "node": {
+              "__typename": "GraphSidecar",
+              "id": "3003",
+              "shortcode": "CcarPQR003",
+              "display_url": "https://scontent.cdninstagram.com/carousel003.jpg",
+              "is_video": false,
+              "taken_at_timestamp": 1700200000,
+              "edge_media_to_caption": { "edges": [] },
+              "edge_liked_by": { "count": 3300 },
+              "edge_media_to_comment": { "count": 55 }
+            }
+          }
+        ]
+      }
+    }
+  }
+}
