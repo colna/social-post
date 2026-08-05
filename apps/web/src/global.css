@@ -1,0 +1,8 @@
+/* tailwind 由 @umijs/plugins/dist/tailwindcss 自动注入(preflight 已在 config 关闭)。
+   这里只放少量全局微调。 */
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
