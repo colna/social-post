@@ -28,6 +28,8 @@ WEB_PROFILE_INFO_URL = (
 # web_profile_info 现在通常只返回资料 + 帖子数量,不再返回 timeline 明细,
 # 需要帖子列表时回退到用户 feed 接口(按 user id 查)。
 USER_FEED_URL = "https://www.instagram.com/api/v1/feed/user/{user_id}/?count={count}"
+# feed 每页约 12 条(IG 忽略更大的 count),要更多得用 next_max_id 翻页
+FEED_PAGE_SIZE = 12
 # web_profile_info 对「商业/专业号」会返回 400(IG 侧 ig_business_category_subvertical
 # asset 被删的 bug),此时回退到主页 HTML 抠 user id + 基础资料。
 PROFILE_HTML_URL = "https://www.instagram.com/{handle}/"
@@ -64,21 +66,42 @@ class InstagramCrawler:
 
         max_posts = opts.max_posts if opts.max_posts is not None else 30
 
-        # 帖子未随资料返回时(现状,含回退路径),走 user feed 接口拿帖子
+        # 帖子未随资料返回时(现状,含回退路径),走 user feed 接口分页拿帖子
         if max_posts > 0 and not result.posts and result.account.external_id:
-            feed_url = USER_FEED_URL.format(
-                user_id=quote(str(result.account.external_id)),
-                count=max_posts,
+            result.posts = await self._fetch_feed_posts(
+                result.account.external_id, headers, max_posts
             )
-            feed_json = await fetcher.fetch_json(
-                feed_url, headers=headers, mode=settings.scrapling_mode
-            )
-            result.posts = parse_feed_items(feed_json)
 
         # 按 max_posts 截断
         if max_posts >= 0:
             result.posts = result.posts[:max_posts]
         return result
+
+    async def _fetch_feed_posts(
+        self, user_id: str, headers: dict[str, str], max_posts: int
+    ) -> list:
+        """按 next_max_id 翻页拉取用户 feed,直到攒够 max_posts 或没有更多。"""
+        posts: list = []
+        max_id: str | None = None
+        while len(posts) < max_posts:
+            url = USER_FEED_URL.format(
+                user_id=quote(str(user_id)), count=FEED_PAGE_SIZE
+            )
+            if max_id:
+                url += "&max_id=" + quote(str(max_id))
+            data = await fetcher.fetch_json(
+                url, headers=headers, mode=settings.scrapling_mode
+            )
+            page = parse_feed_items(data)
+            if not page:
+                break
+            posts.extend(page)
+            if not data.get("more_available"):
+                break
+            max_id = data.get("next_max_id")
+            if not max_id:
+                break
+        return posts
 
     async def _fetch_via_html(
         self, handle: str, cookie_value: str | None

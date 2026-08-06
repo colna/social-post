@@ -102,3 +102,65 @@ def test_crawl_respects_max_posts(
     )
     assert resp.status_code == 200
     assert len(resp.json()["posts"]) == 2
+
+
+# ── feed 分页(_fetch_feed_posts)──
+
+
+def _feed_page(prefix: str, more: bool, next_id: str | None) -> dict:
+    return {
+        "items": [{"code": f"{prefix}{i}", "media_type": 1} for i in range(12)],
+        "more_available": more,
+        "next_max_id": next_id,
+    }
+
+
+def test_feed_pagination_follows_next_max_id(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import asyncio
+    import re
+
+    from app.crawlers.instagram import InstagramCrawler
+
+    pages = [
+        _feed_page("A", True, "m1"),
+        _feed_page("B", True, "m2"),
+        _feed_page("C", False, None),
+    ]
+    seen_max_ids: list[str | None] = []
+    idx = {"i": 0}
+
+    async def fake_fetch_json(url: str, headers: dict, mode: str = "fetch") -> dict:
+        m = re.search(r"max_id=([^&]+)", url)
+        seen_max_ids.append(m.group(1) if m else None)
+        page = pages[idx["i"]]
+        idx["i"] += 1
+        return page
+
+    monkeypatch.setattr(fetcher, "fetch_json", fake_fetch_json)
+
+    posts = asyncio.run(InstagramCrawler()._fetch_feed_posts("123", {}, 30))
+    # 3 页 * 12 = 36(_fetch_feed_posts 不截断,截断在 fetch_profile)
+    assert len(posts) == 36
+    # 首页无 max_id,之后依次带 next_max_id 翻页
+    assert seen_max_ids == [None, "m1", "m2"]
+
+
+def test_feed_pagination_stops_at_max_posts(monkeypatch: pytest.MonkeyPatch) -> None:
+    import asyncio
+
+    from app.crawlers.instagram import InstagramCrawler
+
+    calls = {"n": 0}
+
+    async def fake_fetch_json(url: str, headers: dict, mode: str = "fetch") -> dict:
+        calls["n"] += 1
+        return _feed_page("A", True, "m1")
+
+    monkeypatch.setattr(fetcher, "fetch_json", fake_fetch_json)
+
+    posts = asyncio.run(InstagramCrawler()._fetch_feed_posts("123", {}, 5))
+    # 单页 12 条已 >= 5,不再翻页
+    assert len(posts) == 12
+    assert calls["n"] == 1
