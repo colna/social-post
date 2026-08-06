@@ -94,3 +94,56 @@ def test_missing_user_raises() -> None:
 def test_missing_data_raises() -> None:
     with pytest.raises(ParseError):
         parse_web_profile_info({})
+
+
+# ── user feed 接口解析(parse_feed_items) ──
+
+
+def test_parse_feed_items_types_and_fields() -> None:
+    from app.parsers.instagram import parse_feed_items
+
+    feed = {
+        "items": [
+            {
+                "code": "AAA",
+                "media_type": 1,  # 图片
+                "like_count": 10,
+                "comment_count": 2,
+                "taken_at": 1700000000,
+                "caption": {"text": "hello"},
+                "image_versions2": {"candidates": [{"url": "https://cdn/a.jpg"}]},
+            },
+            {
+                "code": "BBB",
+                "media_type": 2,  # 视频 + clips → reel
+                "product_type": "clips",
+                "like_count": 6,
+                "caption": None,
+                "carousel_media": None,
+            },
+            {
+                "code": "CCC",
+                "media_type": 8,  # carousel,封面取首图
+                "carousel_media": [
+                    {"image_versions2": {"candidates": [{"url": "https://cdn/c1.jpg"}]}}
+                ],
+            },
+        ]
+    }
+    posts = parse_feed_items(feed)
+    assert [p.type for p in posts] == ["image", "reel", "carousel"]
+    assert posts[0].shortcode == "AAA"
+    assert posts[0].url == "https://www.instagram.com/p/AAA/"
+    assert posts[0].caption == "hello"
+    assert posts[0].like_count == 10
+    assert posts[0].cover_url == "https://cdn/a.jpg"
+    assert posts[1].url == "https://www.instagram.com/reel/BBB/"
+    assert posts[1].caption is None
+    assert posts[2].cover_url == "https://cdn/c1.jpg"
+
+
+def test_parse_feed_items_empty() -> None:
+    from app.parsers.instagram import parse_feed_items
+
+    assert parse_feed_items({}) == []
+    assert parse_feed_items({"items": None}) == []

@@ -17,7 +17,8 @@ from app.errors import FetchError
 async def fetch_json(url: str, headers: dict[str, str], mode: str = "fetch") -> dict:
     """抓取 url 并返回解析后的 JSON dict。
 
-    mode == "stealth" 用 StealthyFetcher,否则用普通 Fetcher。
+    mode == "stealth" 用 scrapling StealthyFetcher(需 playwright/浏览器);
+    否则(默认 fetch)直接用 curl_cffi 请求。
     任何网络失败 / 非 2xx / JSON 解析失败都归一为 FetchError。
     """
     try:
@@ -29,26 +30,30 @@ async def fetch_json(url: str, headers: dict[str, str], mode: str = "fetch") -> 
                 headers=headers,
                 network_idle=True,
             )
+            status = getattr(page, "status", None)
+            body = getattr(page, "body", None) or getattr(page, "text", None)
         else:
-            from scrapling.fetchers import Fetcher
+            # 直接用 curl_cffi(impersonate 伪装浏览器 TLS 指纹),不走 scrapling.fetchers:
+            # 后者在 import 阶段会连锁加载 camoufox/playwright 引擎,缺 playwright 时
+            # 整个导入就 ModuleNotFoundError。IG 抓的是纯 JSON 接口,curl_cffi 足矣。
+            from curl_cffi.requests import AsyncSession
 
-            page = await Fetcher.async_get(
-                url,
-                headers=headers,
-                impersonate="chrome",
-            )
+            async with AsyncSession() as session:
+                resp = await session.get(
+                    url,
+                    headers=headers,
+                    impersonate="chrome",
+                )
+            status = resp.status_code
+            body = resp.text
     except FetchError:
         raise
-    except Exception as exc:  # scrapling 各类异常统一归一
+    except Exception as exc:  # 各类抓取异常统一归一
         raise FetchError(f"抓取失败: {exc}") from exc
 
-    status = getattr(page, "status", None)
     if status is not None and not (200 <= status < 300):
         raise FetchError(f"上游返回非 2xx 状态: {status}")
 
-    body = getattr(page, "body", None)
-    if body is None:
-        body = getattr(page, "text", None)
     if body is None:
         raise FetchError("上游响应无正文")
 

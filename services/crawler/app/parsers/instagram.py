@@ -80,6 +80,65 @@ def _parse_post(node: dict) -> PostItem:
     )
 
 
+def _feed_media_type(item: dict) -> str:
+    """feed item 的 media_type:1=图,2=视频(clips 为 reel),8=carousel。"""
+    mt = item.get("media_type")
+    if mt == 8:
+        return "carousel"
+    if mt == 2:
+        return "reel" if item.get("product_type") == "clips" else "video"
+    return "image"
+
+
+def _feed_cover(item: dict) -> str:
+    """封面图:carousel 取首图,否则取自身 image_versions2 首个候选。"""
+    node = item
+    carousel = item.get("carousel_media")
+    if isinstance(carousel, list) and carousel:
+        node = carousel[0]
+    candidates = (node.get("image_versions2") or {}).get("candidates") or []
+    if candidates:
+        return candidates[0].get("url") or ""
+    return ""
+
+
+def _parse_feed_item(item: dict) -> PostItem:
+    """解析 /api/v1/feed/user/{id}/ 的单条 item(结构与 web_profile_info 的 node 不同)。"""
+    code = item.get("code") or ""
+    mtype = _feed_media_type(item)
+    path = "reel" if mtype == "reel" else "p"
+
+    taken_ts = _to_int(item.get("taken_at"))
+    taken_at = (
+        datetime.fromtimestamp(taken_ts, tz=timezone.utc)
+        if taken_ts is not None
+        else None
+    )
+
+    caption_node = item.get("caption")
+    caption = caption_node.get("text") if isinstance(caption_node, dict) else None
+
+    return PostItem(
+        shortcode=code,
+        url=f"https://www.instagram.com/{path}/{code}/",
+        type=mtype,
+        cover_url=_feed_cover(item),
+        caption=caption or None,
+        like_count=_to_int(item.get("like_count")),
+        comment_count=_to_int(item.get("comment_count")),
+        taken_at=taken_at,
+        raw=item,
+    )
+
+
+def parse_feed_items(json_data: dict) -> list[PostItem]:
+    """把 user feed 接口的 JSON(顶层 `items` 数组)解析成 PostItem 列表。"""
+    items = json_data.get("items") if isinstance(json_data, dict) else None
+    if not isinstance(items, list):
+        return []
+    return [_parse_feed_item(it) for it in items if isinstance(it, dict)]
+
+
 def parse_web_profile_info(json_data: dict) -> ProfileResult:
     """把 web_profile_info JSON 解析成 ProfileResult。"""
     data = json_data.get("data") if isinstance(json_data, dict) else None
