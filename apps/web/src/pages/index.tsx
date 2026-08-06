@@ -230,7 +230,7 @@ export default function HomePage() {
       fixSiderbar
       fixedHeader
       siderWidth={200}
-      location={{ pathname: platform }}
+      location={{ pathname: '/' + platform }}
       menuDataRender={() => menuData}
       menuItemRender={(item, dom) =>
         item.disabled ? (
@@ -238,10 +238,12 @@ export default function HomePage() {
             {dom} <Tag>敬请期待</Tag>
           </span>
         ) : (
-          <span onClick={() => item.path && setPlatform(item.path)}>{dom}</span>
+          <span onClick={() => item.path && setPlatform(item.path.replace(/^\//, ''))}>
+            {dom}
+          </span>
         )
       }
-      menuProps={{ selectedKeys: [platform] }}
+      menuProps={{ selectedKeys: ['/' + platform] }}
       collapsedButtonRender={false}
     >
       <PageContainer
