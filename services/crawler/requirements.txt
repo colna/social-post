@@ -6,3 +6,6 @@ httpx>=0.27
 eval_type_backport>=0.2; python_version < "3.11"
 # 生产抓取依赖;测试环境不安装(fetcher 延迟 import)
 scrapling>=0.2
+# scrapling 的默认 Fetcher(impersonate="chrome")底层用 curl_cffi;新版 scrapling
+# 把它拆成可选依赖,不显式装会在运行时报 `No module named 'curl_cffi'`。
+curl_cffi>=0.7
