@@ -234,8 +234,30 @@ export default function HomePage() {
       menuDataRender={() => menuData}
       menuItemRender={(item, dom) =>
         item.disabled ? (
-          <span style={{ cursor: 'not-allowed' }}>
-            {dom} <Tag>敬请期待</Tag>
+          <span
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 4,
+              cursor: 'not-allowed',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {dom}
+            <Tag
+              bordered={false}
+              color="default"
+              style={{
+                margin: 0,
+                flexShrink: 0,
+                fontSize: 11,
+                lineHeight: '18px',
+                padding: '0 6px',
+              }}
+            >
+              敬请期待
+            </Tag>
           </span>
         ) : (
           <span onClick={() => item.path && setPlatform(item.path.replace(/^\//, ''))}>
