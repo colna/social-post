@@ -22,7 +22,10 @@ class CamelModel(BaseModel):
 
 
 class CrawlOptions(CamelModel):
-    max_posts: int = 30
+    # max_posts=None 表示不限条数;since/until 为 unix 秒,限定帖子发布时间段
+    max_posts: int | None = None
+    since: int | None = None
+    until: int | None = None
 
 
 class PostItem(CamelModel):
@@ -61,5 +64,7 @@ class CrawlRequest(CamelModel):
     """POST /crawl/{platform} 请求体。"""
 
     handle: str
-    max_posts: int = 30
+    max_posts: int | None = None
+    since: int | None = None
+    until: int | None = None
     cookie: str | None = None

@@ -52,9 +52,11 @@ describe('PostService', () => {
     prisma.post.count.mockResolvedValue(2);
 
     const service = await build();
-    const res = await service.crawlAccount('a1', 30);
+    const res = await service.crawlAccount('a1', { maxPosts: 30 });
 
-    expect(crawler.crawl).toHaveBeenCalledWith('instagram', 'nasa', 30);
+    expect(crawler.crawl).toHaveBeenCalledWith('instagram', 'nasa', {
+      maxPosts: 30,
+    });
     expect(prisma.account.update).toHaveBeenCalledTimes(1);
     expect(prisma.post.create).toHaveBeenCalledTimes(2);
     expect(res).toEqual({ accountId: 'a1', fetched: 2, added: 2, total: 2 });

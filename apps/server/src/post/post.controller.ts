@@ -17,9 +17,12 @@ export class PostController {
   @Post('crawl')
   crawl(
     @Param('id') id: string,
-    @Body('maxPosts', new DefaultValuePipe(30), ParseIntPipe) maxPosts: number,
+    // 全部选填:maxPosts 不传=不限条数;since/until 为 unix 秒,限定发布时间段
+    @Body('maxPosts') maxPosts?: number,
+    @Body('since') since?: number,
+    @Body('until') until?: number,
   ) {
-    return this.postService.crawlAccount(id, maxPosts);
+    return this.postService.crawlAccount(id, { maxPosts, since, until });
   }
 
   @Get('posts')

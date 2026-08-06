@@ -28,7 +28,7 @@ describe('CrawlerService', () => {
     });
     global.fetch = fetchMock as unknown as typeof fetch;
     const service = await build();
-    const res = await service.crawl('instagram', 'nasa', 10);
+    const res = await service.crawl('instagram', 'nasa', { maxPosts: 10 });
     expect(res.account.handle).toBe('nasa');
     const [url, init] = fetchMock.mock.calls[0];
     expect(url).toBe('http://crawler:8000/crawl/instagram');

@@ -44,7 +44,9 @@ async def crawl(
             detail=f"未知平台: {platform}",
         )
 
-    opts = CrawlOptions(max_posts=body.max_posts)
+    opts = CrawlOptions(
+        max_posts=body.max_posts, since=body.since, until=body.until
+    )
     try:
         return await crawler.fetch_profile(body.handle, opts, body.cookie)
     except ParseError as exc:

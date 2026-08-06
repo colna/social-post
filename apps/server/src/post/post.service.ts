@@ -18,12 +18,15 @@ export class PostService {
   /**
    * 触发抓取:调用 crawler → 回填账户画像 → upsert 帖子(按 shortcode 去重)。
    */
-  async crawlAccount(accountId: string, maxPosts = 30) {
+  async crawlAccount(
+    accountId: string,
+    opts: { maxPosts?: number; since?: number; until?: number } = {},
+  ) {
     const account = await this.accountService.findById(accountId);
     const result = await this.crawler.crawl(
       account.platformKey,
       account.handle,
-      maxPosts,
+      opts,
     );
 
     // 回填账户画像

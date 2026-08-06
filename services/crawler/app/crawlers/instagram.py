@@ -30,6 +30,28 @@ WEB_PROFILE_INFO_URL = (
 USER_FEED_URL = "https://www.instagram.com/api/v1/feed/user/{user_id}/?count={count}"
 # feed 每页约 12 条(IG 忽略更大的 count),要更多得用 next_max_id 翻页
 FEED_PAGE_SIZE = 12
+# 不限条数(全量)时的兜底上限,防止对超大号无限翻页跑飞
+MAX_TOTAL_POSTS = 500
+
+
+def _filter_posts(
+    posts: list,
+    max_posts: int | None,
+    since: int | None,
+    until: int | None,
+) -> list:
+    """对已取到的帖子(按发布时间倒序)应用「时间段 + 条数」过滤。"""
+    out: list = []
+    for post in posts:
+        ts = post.taken_at.timestamp() if post.taken_at else None
+        if until is not None and ts is not None and ts > until:
+            continue
+        if since is not None and ts is not None and ts < since:
+            break
+        out.append(post)
+        if max_posts is not None and len(out) >= max_posts:
+            break
+    return out
 # web_profile_info 对「商业/专业号」会返回 400(IG 侧 ig_business_category_subvertical
 # asset 被删的 bug),此时回退到主页 HTML 抠 user id + 基础资料。
 PROFILE_HTML_URL = "https://www.instagram.com/{handle}/"
@@ -64,26 +86,42 @@ class InstagramCrawler:
             # 商业号 web_profile_info 会 400,回退到主页 HTML 解析
             result = await self._fetch_via_html(handle, cookie_value)
 
-        max_posts = opts.max_posts if opts.max_posts is not None else 30
-
-        # 帖子未随资料返回时(现状,含回退路径),走 user feed 接口分页拿帖子
-        if max_posts > 0 and not result.posts and result.account.external_id:
-            result.posts = await self._fetch_feed_posts(
-                result.account.external_id, headers, max_posts
-            )
-
-        # 按 max_posts 截断
-        if max_posts >= 0:
-            result.posts = result.posts[:max_posts]
+        # 帖子未随资料返回时(现状,含回退路径),走 user feed 接口分页拿帖子。
+        # max_posts=None → 不限条数(受 since 时间段 / MAX_TOTAL_POSTS 上限约束)。
+        if result.account.external_id and (
+            opts.max_posts is None or opts.max_posts > 0
+        ):
+            if not result.posts:
+                result.posts = await self._fetch_feed_posts(
+                    result.account.external_id,
+                    headers,
+                    opts.max_posts,
+                    opts.since,
+                    opts.until,
+                )
+            else:
+                result.posts = _filter_posts(
+                    result.posts, opts.max_posts, opts.since, opts.until
+                )
         return result
 
     async def _fetch_feed_posts(
-        self, user_id: str, headers: dict[str, str], max_posts: int
+        self,
+        user_id: str,
+        headers: dict[str, str],
+        max_posts: int | None,
+        since: int | None,
+        until: int | None,
     ) -> list:
-        """按 next_max_id 翻页拉取用户 feed,直到攒够 max_posts 或没有更多。"""
+        """按 next_max_id 翻页拉取 feed,应用「时间段 + 条数」过滤。
+
+        feed 按发布时间倒序:一旦某条早于 since 即可停止翻页(更旧的都在范围外)。
+        max_posts=None 表示不限条数,此时用 MAX_TOTAL_POSTS 兜底防止全量跑飞。
+        """
+        limit = max_posts if max_posts is not None else MAX_TOTAL_POSTS
         posts: list = []
         max_id: str | None = None
-        while len(posts) < max_posts:
+        while len(posts) < limit:
             url = USER_FEED_URL.format(
                 user_id=quote(str(user_id)), count=FEED_PAGE_SIZE
             )
@@ -95,7 +133,26 @@ class InstagramCrawler:
             page = parse_feed_items(data)
             if not page:
                 break
-            posts.extend(page)
+
+            page_max_ts: float | None = None
+            for post in page:
+                ts = post.taken_at.timestamp() if post.taken_at else None
+                if ts is not None:
+                    page_max_ts = ts if page_max_ts is None else max(page_max_ts, ts)
+                if until is not None and ts is not None and ts > until:
+                    continue  # 比时间段更新,跳过
+                if since is not None and ts is not None and ts < since:
+                    continue  # 更旧的(可能是排在最前的置顶老帖),跳过而非 break
+                posts.append(post)
+                if len(posts) >= limit:
+                    break
+
+            if len(posts) >= limit:
+                break
+            # 整页最新的帖子都早于 since → 后续只会更旧,停止翻页
+            # (置顶老帖只在首页,首页最新常规帖 >= since,不会误停)
+            if since is not None and page_max_ts is not None and page_max_ts < since:
+                break
             if not data.get("more_available"):
                 break
             max_id = data.get("next_max_id")

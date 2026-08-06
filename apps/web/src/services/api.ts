@@ -43,10 +43,14 @@ export const api = {
   deleteAccount: (id: string) =>
     request<{ ok: boolean }>(`/accounts/${id}`, { method: 'DELETE' }),
 
-  crawl: (id: string, maxPosts = 30) =>
+  // 全部选填:maxPosts 不传=不限条数;since/until 为 unix 秒,限定发布时间段
+  crawl: (
+    id: string,
+    opts: { maxPosts?: number; since?: number; until?: number } = {},
+  ) =>
     request<CrawlResult>(`/accounts/${id}/crawl`, {
       method: 'POST',
-      body: JSON.stringify({ maxPosts }),
+      body: JSON.stringify(opts),
     }),
 
   posts: (id: string, page = 1, pageSize = 20) =>

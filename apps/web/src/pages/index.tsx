@@ -1,11 +1,14 @@
 import { useRef, useState, type ReactNode } from 'react';
 import { useRequest } from 'ahooks';
+import dayjs from 'dayjs';
 import {
   ProLayout,
   PageContainer,
   ProTable,
   ModalForm,
   ProFormText,
+  ProFormDateRangePicker,
+  ProFormDigit,
   ProDescriptions,
   type ActionType,
   type ProColumns,
@@ -43,6 +46,7 @@ export default function HomePage() {
   const [platform, setPlatform] = useState('');
   const [crawlingId, setCrawlingId] = useState('');
   const [drawerAccount, setDrawerAccount] = useState<Account | null>(null);
+  const [crawlTarget, setCrawlTarget] = useState<Account | null>(null);
   const accountsRef = useRef<ActionType>();
   const postsRef = useRef<ActionType>();
 
@@ -63,11 +67,14 @@ export default function HomePage() {
   }));
 
   // 抓取
-  async function handleCrawl(account: Account) {
+  async function doCrawl(
+    account: Account,
+    opts: { maxPosts?: number; since?: number; until?: number },
+  ) {
     setCrawlingId(account.id);
     const hide = message.loading(`正在抓取 @${account.handle} ...`, 0);
     try {
-      const r = await api.crawl(account.id, 30);
+      const r = await api.crawl(account.id, opts);
       message.success(`抓取完成:新增 ${r.added},共 ${r.total}`);
       accountsRef.current?.reload();
       if (drawerAccount?.id === account.id) postsRef.current?.reload();
@@ -130,7 +137,7 @@ export default function HomePage() {
           size="small"
           icon={<CloudDownloadOutlined />}
           loading={crawlingId === r.id}
-          onClick={() => handleCrawl(r)}
+          onClick={() => setCrawlTarget(r)}
         >
           抓取
         </Button>,
@@ -337,7 +344,7 @@ export default function HomePage() {
               type="primary"
               icon={<CloudDownloadOutlined />}
               loading={crawlingId === drawerAccount.id}
-              onClick={() => handleCrawl(drawerAccount)}
+              onClick={() => setCrawlTarget(drawerAccount)}
             >
               抓取
             </Button>
@@ -390,6 +397,45 @@ export default function HomePage() {
           </>
         )}
       </Drawer>
+
+      <ModalForm<{ range?: [dayjs.Dayjs, dayjs.Dayjs]; limit?: number }>
+        title={crawlTarget ? `抓取 @${crawlTarget.handle}` : '抓取'}
+        open={!!crawlTarget}
+        onOpenChange={(v) => {
+          if (!v) setCrawlTarget(null);
+        }}
+        width={440}
+        initialValues={{ range: [dayjs().subtract(7, 'day'), dayjs()] }}
+        modalProps={{ destroyOnClose: true, okText: '开始抓取' }}
+        onFinish={async (v) => {
+          const target = crawlTarget;
+          if (!target) return true;
+          const opts: { maxPosts?: number; since?: number; until?: number } = {};
+          if (v.range?.[0] && v.range?.[1]) {
+            opts.since = v.range[0].startOf('day').unix();
+            opts.until = v.range[1].endOf('day').unix();
+          }
+          if (v.limit) opts.maxPosts = v.limit;
+          setCrawlTarget(null);
+          void doCrawl(target, opts);
+          return true;
+        }}
+      >
+        <ProFormDateRangePicker
+          name="range"
+          label="时间段(选填,默认近 7 天)"
+          fieldProps={{ allowClear: true }}
+          tooltip="只抓该时间段内发布的帖子;清空则不限时间"
+        />
+        <ProFormDigit
+          name="limit"
+          label="条数(选填)"
+          min={1}
+          fieldProps={{ precision: 0 }}
+          placeholder="不填=时间段内全量"
+          tooltip="填 N 则最多抓最近 N 条;都不填则全量"
+        />
+      </ModalForm>
     </ProLayout>
   );
 }

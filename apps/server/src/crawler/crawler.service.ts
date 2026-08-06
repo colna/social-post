@@ -29,10 +29,13 @@ export class CrawlerService {
   async crawl(
     platform: string,
     handle: string,
-    maxPosts = 30,
+    opts: { maxPosts?: number; since?: number; until?: number } = {},
   ): Promise<CrawlerProfileResult> {
     const url = `${this.baseUrl}/crawl/${platform}`;
-    this.logger.log(`crawl ${platform}/${handle} (maxPosts=${maxPosts})`);
+    this.logger.log(
+      `crawl ${platform}/${handle} (maxPosts=${opts.maxPosts ?? '全量'}, ` +
+        `since=${opts.since ?? '-'}, until=${opts.until ?? '-'})`,
+    );
     let resp: Response;
     try {
       resp = await fetch(url, {
@@ -41,7 +44,13 @@ export class CrawlerService {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${this.token}`,
         },
-        body: JSON.stringify({ handle, maxPosts }),
+        // undefined 字段会被 JSON.stringify 丢弃,crawler 视为「不限」
+        body: JSON.stringify({
+          handle,
+          maxPosts: opts.maxPosts,
+          since: opts.since,
+          until: opts.until,
+        }),
       });
     } catch (e) {
       throw new ServiceUnavailableException(

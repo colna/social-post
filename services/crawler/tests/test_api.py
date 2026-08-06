@@ -140,9 +140,8 @@ def test_feed_pagination_follows_next_max_id(
 
     monkeypatch.setattr(fetcher, "fetch_json", fake_fetch_json)
 
-    posts = asyncio.run(InstagramCrawler()._fetch_feed_posts("123", {}, 30))
-    # 3 页 * 12 = 36(_fetch_feed_posts 不截断,截断在 fetch_profile)
-    assert len(posts) == 36
+    posts = asyncio.run(InstagramCrawler()._fetch_feed_posts("123", {}, 30, None, None))
+    assert len(posts) == 30  # limit=30,页内精确截断
     # 首页无 max_id,之后依次带 next_max_id 翻页
     assert seen_max_ids == [None, "m1", "m2"]
 
@@ -160,7 +159,33 @@ def test_feed_pagination_stops_at_max_posts(monkeypatch: pytest.MonkeyPatch) -> 
 
     monkeypatch.setattr(fetcher, "fetch_json", fake_fetch_json)
 
-    posts = asyncio.run(InstagramCrawler()._fetch_feed_posts("123", {}, 5))
-    # 单页 12 条已 >= 5,不再翻页
-    assert len(posts) == 12
+    posts = asyncio.run(InstagramCrawler()._fetch_feed_posts("123", {}, 5, None, None))
+    # 单页内截到 5,不再翻页
+    assert len(posts) == 5
     assert calls["n"] == 1
+
+
+def test_feed_time_range_filter(monkeypatch: pytest.MonkeyPatch) -> None:
+    import asyncio
+
+    from app.crawlers.instagram import InstagramCrawler
+
+    # 一页三条,taken_at 倒序 300/200/100;since=150 until=250 → 只保留 200
+    page = {
+        "items": [
+            {"code": "new", "media_type": 1, "taken_at": 300},
+            {"code": "mid", "media_type": 1, "taken_at": 200},
+            {"code": "old", "media_type": 1, "taken_at": 100},
+        ],
+        "more_available": False,
+        "next_max_id": None,
+    }
+
+    async def fake_fetch_json(url: str, headers: dict, mode: str = "fetch") -> dict:
+        return page
+
+    monkeypatch.setattr(fetcher, "fetch_json", fake_fetch_json)
+    posts = asyncio.run(
+        InstagramCrawler()._fetch_feed_posts("1", {}, None, 150, 250)
+    )
+    assert [p.shortcode for p in posts] == ["mid"]
