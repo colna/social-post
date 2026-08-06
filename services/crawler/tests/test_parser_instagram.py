@@ -147,3 +147,34 @@ def test_parse_feed_items_empty() -> None:
 
     assert parse_feed_items({}) == []
     assert parse_feed_items({"items": None}) == []
+
+
+# ── 主页 HTML 回退解析(parse_profile_html) ──
+
+
+def test_parse_profile_html_business_fallback() -> None:
+    from app.parsers.instagram import parse_profile_html
+
+    html_text = (
+        '<html><head>'
+        '<meta property="og:title" content="Porsche (&#064;porsche) &#xb7; Instagram">'
+        '<meta property="og:image" content="https://cdn/porsche.jpg">'
+        '<meta property="og:description" content="33M Followers, 126 Following, '
+        '4,837 Posts - See Instagram">'
+        '</head><body>{"profilePage_462752227":true}</body></html>'
+    )
+    info = parse_profile_html(html_text)
+    assert info is not None
+    assert info["external_id"] == "462752227"
+    assert info["username"] == "porsche"
+    assert info["display_name"] == "Porsche"
+    assert info["avatar_url"] == "https://cdn/porsche.jpg"
+    assert info["follower_count"] == 33_000_000  # 33M 近似
+    assert info["following_count"] == 126
+    assert info["media_count"] == 4837
+
+
+def test_parse_profile_html_no_id_returns_none() -> None:
+    from app.parsers.instagram import parse_profile_html
+
+    assert parse_profile_html("<html><body>no id here</body></html>") is None

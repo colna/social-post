@@ -14,38 +14,34 @@ from typing import Any
 from app.errors import FetchError
 
 
-async def fetch_json(url: str, headers: dict[str, str], mode: str = "fetch") -> dict:
-    """抓取 url 并返回解析后的 JSON dict。
+async def _raw_get(
+    url: str, headers: dict[str, str], mode: str
+) -> tuple[int | None, str | None]:
+    """发一次 GET,返回 (status, body_text)。
 
     mode == "stealth" 用 scrapling StealthyFetcher(需 playwright/浏览器);
-    否则(默认 fetch)直接用 curl_cffi 请求。
-    任何网络失败 / 非 2xx / JSON 解析失败都归一为 FetchError。
+    否则(默认 fetch)直接用 curl_cffi:后者在 import 阶段会连锁加载 camoufox/playwright,
+    缺 playwright 会 ModuleNotFoundError,而 IG 抓的是纯文本/JSON,curl_cffi 足矣。
     """
+    if mode == "stealth":
+        from scrapling.fetchers import StealthyFetcher
+
+        page = await StealthyFetcher.async_fetch(url, headers=headers, network_idle=True)
+        return getattr(page, "status", None), (
+            getattr(page, "body", None) or getattr(page, "text", None)
+        )
+
+    from curl_cffi.requests import AsyncSession
+
+    async with AsyncSession() as session:
+        resp = await session.get(url, headers=headers, impersonate="chrome")
+    return resp.status_code, resp.text
+
+
+async def fetch_text(url: str, headers: dict[str, str], mode: str = "fetch") -> str:
+    """抓取 url 返回原始文本(HTML 等)。非 2xx / 空正文归一为 FetchError。"""
     try:
-        if mode == "stealth":
-            from scrapling.fetchers import StealthyFetcher
-
-            page = await StealthyFetcher.async_fetch(
-                url,
-                headers=headers,
-                network_idle=True,
-            )
-            status = getattr(page, "status", None)
-            body = getattr(page, "body", None) or getattr(page, "text", None)
-        else:
-            # 直接用 curl_cffi(impersonate 伪装浏览器 TLS 指纹),不走 scrapling.fetchers:
-            # 后者在 import 阶段会连锁加载 camoufox/playwright 引擎,缺 playwright 时
-            # 整个导入就 ModuleNotFoundError。IG 抓的是纯 JSON 接口,curl_cffi 足矣。
-            from curl_cffi.requests import AsyncSession
-
-            async with AsyncSession() as session:
-                resp = await session.get(
-                    url,
-                    headers=headers,
-                    impersonate="chrome",
-                )
-            status = resp.status_code
-            body = resp.text
+        status, body = await _raw_get(url, headers, mode)
     except FetchError:
         raise
     except Exception as exc:  # 各类抓取异常统一归一
@@ -53,10 +49,17 @@ async def fetch_json(url: str, headers: dict[str, str], mode: str = "fetch") -> 
 
     if status is not None and not (200 <= status < 300):
         raise FetchError(f"上游返回非 2xx 状态: {status}")
-
-    if body is None:
+    if not body:
         raise FetchError("上游响应无正文")
+    return body
 
+
+async def fetch_json(url: str, headers: dict[str, str], mode: str = "fetch") -> dict:
+    """抓取 url 并返回解析后的 JSON dict。
+
+    任何网络失败 / 非 2xx / JSON 解析失败都归一为 FetchError。
+    """
+    body = await fetch_text(url, headers, mode)
     try:
         return json.loads(body)
     except (ValueError, TypeError) as exc:

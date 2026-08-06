@@ -7,6 +7,8 @@
 
 from __future__ import annotations
 
+import html
+import re
 from datetime import datetime, timezone
 from typing import Any
 
@@ -78,6 +80,65 @@ def _parse_post(node: dict) -> PostItem:
         taken_at=taken_at,
         raw=node,
     )
+
+
+def _abbrev_to_int(token: str) -> int | None:
+    """把 '33M' / '4,837' / '1.2K' 这类(可能缩写的)数字转成 int。"""
+    token = token.strip().replace(",", "")
+    m = re.match(r"^([\d.]+)\s*([KMBkmb])?$", token)
+    if not m:
+        return None
+    try:
+        value = float(m.group(1))
+    except ValueError:
+        return None
+    mult = {"K": 1e3, "M": 1e6, "B": 1e9}.get((m.group(2) or "").upper(), 1)
+    return int(value * mult)
+
+
+def _og(html_text: str, prop: str) -> str | None:
+    m = re.search(
+        r'<meta property="og:' + prop + r'" content="([^"]*)"', html_text
+    )
+    return html.unescape(m.group(1)) if m else None
+
+
+def parse_profile_html(html_text: str) -> dict | None:
+    """从 IG 主页 HTML 抠 user id + 基础资料(best-effort)。
+
+    用于 web_profile_info 对商业号返回 400(IG bug)时的回退。返回 dict;
+    拿不到 user id 则返回 None。粉丝/关注/帖子数来自 og:description(顺序固定:
+    followers、following、posts),大号粉丝数是缩写(如 33M),为近似值。
+    """
+    idm = re.search(r'"profilePage_(\d+)"', html_text) or re.search(
+        r'"props":\{"user":\{"id":"(\d+)"', html_text
+    )
+    if not idm:
+        return None
+    user_id = idm.group(1)
+
+    title = _og(html_text, "title") or ""
+    handle_m = re.search(r"\(@([A-Za-z0-9._]+)\)", title)
+    username = handle_m.group(1) if handle_m else None
+    display_name = title.split(" (@")[0].strip() or None
+
+    avatar = _og(html_text, "image")
+
+    desc = _og(html_text, "description") or ""
+    nums = re.findall(r"[\d][\d.,]*\s*[KMBkmb]?", desc)
+    follower = _abbrev_to_int(nums[0]) if len(nums) > 0 else None
+    following = _abbrev_to_int(nums[1]) if len(nums) > 1 else None
+    media = _abbrev_to_int(nums[2]) if len(nums) > 2 else None
+
+    return {
+        "external_id": user_id,
+        "username": username,
+        "display_name": display_name,
+        "avatar_url": avatar,
+        "follower_count": follower,
+        "following_count": following,
+        "media_count": media,
+    }
 
 
 def _feed_media_type(item: dict) -> str:
