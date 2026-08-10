@@ -38,6 +38,40 @@ async def _raw_get(
     return resp.status_code, resp.text
 
 
+async def _raw_post(
+    url: str, headers: dict[str, str], data: str
+) -> tuple[int | None, str | None]:
+    """发一次 form POST(curl_cffi impersonate chrome + HTTP/2)。
+
+    FB 的 /api/graphql/ 会按 TLS/HTTP2 指纹反自动化:用 urllib/requests 会被拒
+    (error 1357054),必须用 curl_cffi 的 chrome 指纹。故 POST 只走 curl_cffi。
+    """
+    from curl_cffi.requests import AsyncSession
+
+    async with AsyncSession() as session:
+        resp = await session.post(
+            url, data=data, headers=headers, impersonate="chrome"
+        )
+    return resp.status_code, resp.text
+
+
+async def fetch_post_text(
+    url: str, headers: dict[str, str], data: str
+) -> str:
+    """form-urlencoded POST,返回原始文本。非 2xx / 空正文归一为 FetchError。"""
+    try:
+        status, body = await _raw_post(url, headers, data)
+    except FetchError:
+        raise
+    except Exception as exc:
+        raise FetchError(f"POST 失败: {exc}") from exc
+    if status is not None and not (200 <= status < 300):
+        raise FetchError(f"上游返回非 2xx 状态: {status}")
+    if not body:
+        raise FetchError("上游响应无正文")
+    return body
+
+
 async def fetch_text(url: str, headers: dict[str, str], mode: str = "fetch") -> str:
     """抓取 url 返回原始文本(HTML 等)。非 2xx / 空正文归一为 FetchError。"""
     try:

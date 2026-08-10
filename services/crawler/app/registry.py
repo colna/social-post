@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 from app.crawlers.base import PlatformCrawler
+from app.crawlers.facebook import FacebookCrawler
 from app.crawlers.instagram import InstagramCrawler
 
 CRAWLERS: dict[str, PlatformCrawler] = {
     InstagramCrawler.key: InstagramCrawler(),
+    FacebookCrawler.key: FacebookCrawler(),
 }
 
 

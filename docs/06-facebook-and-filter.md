@@ -18,12 +18,20 @@
 | `prisma/seed.ts` | `facebook` 已存在但 `enabled:false` | 支持后翻 `true` |
 | `apps/web` | 菜单/表格/抓取弹窗按 `platform` 泛化 | 筛选:`utils/filter.ts` + ProTable search;FB 启用后自动出现 |
 
-### FB 抓取方案(2026-08-10 定)
+### FB 抓取方案(2026-08-10 实测定稿)
 
-- **数据源:mbasic HTML + cookie**(已与用户确认)。三入口(mbasic / m.facebook / www)无 cookie 全部 400/302 跳登录 → **必须带已登录 fb cookie**(机制同 IG `IG_COOKIE`,新增 `FB_COOKIE`,不进仓库)。
-- 复用 `fetcher.fetch_text`(curl_cffi impersonate)抓 `mbasic.facebook.com/<handle>`;parser 从 mbasic HTML 抠资料 + 帖子列表,翻页走 mbasic 的「查看更多」`?cursor=` 链接。
-- 备选(不采用):Graph API(任意公开页拿不到帖子)、内部 GraphQL(fb_dtsg/doc_id 最脆)。
-- **开发方式**:parser 用真实 mbasic HTML fixture + mock fetcher 离线单测(同 IG),cookie 仅运行时需要。
+**必须带已登录 fb cookie**(机制同 IG `IG_COOKIE`,新增 `FB_COOKIE`,不进仓库):三入口无 cookie 全 400/302。
+
+实测结论(带真实 cookie 打 uksmartgroup):
+- **mbasic 已死**:带 cookie 也返回「错误」页(FB 下线中)。
+- **桌面 www 可用(纯 GET,不触发反自动化)**:能拿 名称/主页 id(`100063693364145`)/主页链接;粉丝数、帖子数不在初始页(懒加载);**页面内嵌 timeline 只有约 1 条帖**(字段可解析)。
+- **GraphQL 翻页(拿多帖)**:从页面 `ProfileCometTimelineFeedQueryRelayPreloader` 抠到 `doc_id=27002668536074808` + variables(按 `userID` 翻页)。**关键坑**:用 urllib 发直接被 FB 反自动化拒(`error 1357054`)——真因是 **Python TLS 指纹**;换 **curl / curl_cffi(`impersonate=chrome` + HTTP/2)** 成功拿到 542KB、3 帖 + `end_cursor` + `has_next_page`。**但**:连发 1~2 次 GraphQL 后 FB 即软封该会话/账号(后续含全新 token 的请求也持续 `1357054`)。稳定多帖需 会话/代理轮换 或 无头浏览器 + 拟人节流,成本高 + 封号风险,**本期不做**。
+
+**最终采用(稳妥优先 + 优雅降级)**:
+1. crawler 用 curl_cffi(`impersonate=chrome`)GET `www.facebook.com/<handle>/` → parser 解析 资料 + 页面内嵌初始帖 + 抠 GraphQL 上下文(fb_dtsg/lsd/doc_id/userID/variables 等)。
+2. 尽力发 1~N 次 GraphQL 翻页补更多帖;遇 `1357054` / 非 2xx **优雅降级**为「仅内嵌帖」,不报错。
+3. parser 用真实抓到的 timeline 响应结构做 fixture,**离线单测**;cookie 仅运行时用。
+- 备选(不采用):Graph API(任意公开页拿不到帖子)。
 
 ## 三、任务拆解(Phase → Task)
 
@@ -49,13 +57,13 @@
 
 | Task | 状态 | 完成时间 | 测试 | commit | 备注 |
 |------|------|----------|------|--------|------|
-| A.1 filter 纯函数+测试 | ✅ | 2026-08-10 | 7 passed | — | handle/展示名/时间段 |
-| A.2 接入 ProTable search | ✅ | 2026-08-10 | tsc/lint/11 passed | — | IG/FB 共用 |
-| B.1 抓 fixture | ⬜ | | | | 待 cookie |
-| B.2 FB parser+测试 | ⬜ | | | | |
-| B.3 FB crawler+注册 | ⬜ | | | | |
-| B.4 config/env cookie | ⬜ | | | | |
-| B.5 API 测试 facebook | ⬜ | | | | |
-| C.1 seed 启用 facebook | ⬜ | | | | |
-| C.2 端到端打通 | ⬜ | | | | |
-| C.3 视觉走查 | ⬜ | | | | |
+| A.1 filter 纯函数+测试 | ✅ | 2026-08-10 | 7 passed | e69fefa | handle/展示名/时间段 |
+| A.2 接入 ProTable search | ✅ | 2026-08-10 | tsc/lint/11 passed | e69fefa | IG/FB 共用 |
+| B.1 抓 fixture | ✅ | 2026-08-10 | — | — | 带 cookie 抓到真实 www 页 + 542KB timeline 响应,据此建合成 fixture |
+| B.2 FB parser+测试 | ✅ | 2026-08-10 | 9 passed | — | `parsers/facebook.py`:资料+上下文+timeline 三类帖 |
+| B.3 FB crawler+注册 | ✅ | 2026-08-10 | — | — | `crawlers/facebook.py` GET+尽力翻页+优雅降级;registry 注册 |
+| B.4 config/env cookie | ✅ | 2026-08-10 | — | — | `config.fb_cookie` + `.env.example` FB_COOKIE + fetcher.fetch_post_text |
+| B.5 API 测试 facebook | ✅ | 2026-08-10 | 32 passed | — | crawl OK + 软封降级两条 |
+| C.1 seed 启用 facebook | ✅ | 2026-08-10 | — | — | `enabled:true` |
+| C.2 端到端打通 | 🟡 | | | | 代码通;live 抓取受 FB 风控限流(连发 GraphQL 即软封),稳定多帖需代理/浏览器 |
+| C.3 视觉走查 | ⬜ | | | | 待用户本地跑 seed + web 验证 |

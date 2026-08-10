@@ -165,6 +165,68 @@ def test_feed_pagination_stops_at_max_posts(monkeypatch: pytest.MonkeyPatch) -> 
     assert calls["n"] == 1
 
 
+# ── Facebook(patch fetch_text 主页 + fetch_post_text GraphQL)──
+
+FB_PROFILE = (Path(__file__).parent / "fixtures" / "fb_profile.html").read_text(
+    encoding="utf-8"
+)
+FB_TIMELINE = (Path(__file__).parent / "fixtures" / "fb_timeline.txt").read_text(
+    encoding="utf-8"
+)
+
+
+def test_crawl_facebook_ok(
+    monkeypatch: pytest.MonkeyPatch, auth_header: dict[str, str]
+) -> None:
+    async def fake_fetch_text(url: str, headers: dict, mode: str = "fetch") -> str:
+        return FB_PROFILE
+
+    async def fake_post(url: str, headers: dict, data: str) -> str:
+        return FB_TIMELINE
+
+    monkeypatch.setattr(fetcher, "fetch_text", fake_fetch_text)
+    monkeypatch.setattr(fetcher, "fetch_post_text", fake_post)
+
+    resp = client.post(
+        "/crawl/facebook",
+        json={"handle": "uksmartgroup", "maxPosts": 5},
+        headers=auth_header,
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["account"]["displayName"] == "The Smart Group"
+    assert data["account"]["externalId"] == "100063693364145"
+    # 内嵌帖 999 + timeline 111/222/333,按时间倒序去重
+    codes = [p["shortcode"] for p in data["posts"]]
+    assert codes == ["999", "111", "222", "333"]
+    assert data["posts"][1]["type"] == "carousel"
+
+
+def test_crawl_facebook_degrades_when_graphql_blocked(
+    monkeypatch: pytest.MonkeyPatch, auth_header: dict[str, str]
+) -> None:
+    """FB 软封(GraphQL FetchError)时降级为仅内嵌帖,不报错。"""
+    from app.errors import FetchError
+
+    async def fake_fetch_text(url: str, headers: dict, mode: str = "fetch") -> str:
+        return FB_PROFILE
+
+    async def fake_post(url: str, headers: dict, data: str) -> str:
+        raise FetchError("上游返回非 2xx 状态: 会话被软封")
+
+    monkeypatch.setattr(fetcher, "fetch_text", fake_fetch_text)
+    monkeypatch.setattr(fetcher, "fetch_post_text", fake_post)
+
+    resp = client.post(
+        "/crawl/facebook",
+        json={"handle": "uksmartgroup"},
+        headers=auth_header,
+    )
+    assert resp.status_code == 200
+    posts = resp.json()["posts"]
+    assert [p["shortcode"] for p in posts] == ["999"]
+
+
 def test_feed_time_range_filter(monkeypatch: pytest.MonkeyPatch) -> None:
     import asyncio
 

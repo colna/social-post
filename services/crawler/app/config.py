@@ -15,6 +15,8 @@ class Settings:
         )
         # Instagram 登录态 Cookie(可被单次请求 body 覆盖)
         self.ig_cookie: str = os.environ.get("IG_COOKIE", "")
+        # Facebook 登录态 Cookie(可被单次请求 body 覆盖)
+        self.fb_cookie: str = os.environ.get("FB_COOKIE", "")
         # scrapling 抓取模式:fetch(普通) 或 stealth(反爬)
         self.scrapling_mode: str = os.environ.get("SCRAPLING_MODE", "fetch")
 
