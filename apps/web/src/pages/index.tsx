@@ -35,6 +35,7 @@ import {
 import { api } from '@/services/api';
 import type { Account, Platform, Post } from '@/services/types';
 import { formatCount, formatTime, postTypeColor } from '@/utils/format';
+import { filterAccounts } from '@/utils/filter';
 
 const PLATFORM_ICON: Record<string, ReactNode> = {
   instagram: <InstagramOutlined />,
@@ -114,16 +115,20 @@ export default function HomePage() {
     {
       title: '粉丝',
       dataIndex: 'followerCount',
+      hideInSearch: true,
       render: (_, r) => formatCount(r.followerCount),
     },
     {
       title: '帖子数',
       dataIndex: 'mediaCount',
+      hideInSearch: true,
       render: (_, r) => formatCount(r.mediaCount),
     },
     {
       title: '最近抓取',
       dataIndex: 'lastCrawledAt',
+      valueType: 'dateRange',
+      search: { transform: (v) => ({ lastCrawledAt: v }) },
       render: (_, r) => formatTime(r.lastCrawledAt),
     },
     {
@@ -283,12 +288,22 @@ export default function HomePage() {
         <ProTable<Account>
           actionRef={accountsRef}
           rowKey="id"
-          search={false}
+          search={{ labelWidth: 'auto' }}
           options={{ reload: true, density: false, setting: false }}
           params={{ platform }}
-          request={async () => {
+          request={async (params) => {
             if (!platform) return { data: [], success: true, total: 0 };
-            const data = await api.accounts(platform);
+            const all = await api.accounts(platform);
+            const q = params as {
+              handle?: string;
+              displayName?: string;
+              lastCrawledAt?: string[];
+            };
+            const data = filterAccounts(all, {
+              handle: q.handle,
+              displayName: q.displayName,
+              lastCrawledAt: q.lastCrawledAt,
+            });
             return { data, success: true, total: data.length };
           }}
           columns={accountColumns}
