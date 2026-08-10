@@ -51,6 +51,15 @@
 - C.2 端到端:web 点 Facebook → 新增 uksmartgroup → 抓取 → 表格/帖子展示
 - C.3 浏览器视觉走查(筛选 + FB 帖子)
 
+## 三·补 · Phase D:浏览器脚本采集(绕开 FB 软封)
+
+服务器侧自动化 GraphQL 会被 FB 软封(见上)。改用**在用户已登录的 facebook.com 标签页里跑 JS**:同源 `fetch` 打 `/api/graphql/`,带真实 httpOnly cookie + 真实 `fb_dtsg` + 真实浏览器指纹 + 真人会话 → FB 当正常刷页面,风控宽容。数据从「浏览器 → 推给 server」。
+
+- **server**:`POST /api/ingest/facebook`(`src/ingest/`),`x-ingest-token` 鉴权(env `INGEST_TOKEN`,默认 `change-me-ingest-token`),upsert 账户 + 去重入库(复用 Post 模型),`takenAt` 收 unix 秒。IngestModule 挂进 app.module。
+- **脚本**:`scripts/fb-collector.user.js`(Tampermonkey 用户脚本,`@match https://www.facebook.com/*`)。页内抠 token/doc_id/variables(同 crawler parser 逻辑)→ 同源 GraphQL cursor 翻页(拟人节流 1.2s/页,遇 1357054 停)→ 组装 POST 给 server。FB 主页右下角出现「采集到 social-post」按钮。
+
+**装法**:装 Tampermonkey → 新建脚本粘贴 `scripts/fb-collector.user.js` → 油猴菜单「设置 server API 基址」(如 `http://localhost:3001/api`)+「设置 ingest token」(与 server `INGEST_TOKEN` 一致)→ 打开目标 FB 主页点按钮。
+
 ## 四、进度
 
 > 状态:⬜ 未开始 / 🟡 进行中 / ✅ 完成。
@@ -65,5 +74,8 @@
 | B.4 config/env cookie | ✅ | 2026-08-10 | — | — | `config.fb_cookie` + `.env.example` FB_COOKIE + fetcher.fetch_post_text |
 | B.5 API 测试 facebook | ✅ | 2026-08-10 | 32 passed | — | crawl OK + 软封降级两条 |
 | C.1 seed 启用 facebook | ✅ | 2026-08-10 | — | — | `enabled:true` |
-| C.2 端到端打通 | 🟡 | | | | 代码通;live 抓取受 FB 风控限流(连发 GraphQL 即软封),稳定多帖需代理/浏览器 |
+| C.2 端到端打通 | 🟡 | | | | server 侧代码通;live 拉取受 FB 风控 → 改走 Phase D 浏览器脚本 |
 | C.3 视觉走查 | ⬜ | | | | 待用户本地跑 seed + web 验证 |
+| D.1 server ingest 端点 | ✅ | 2026-08-10 | 13 passed | — | POST /api/ingest/facebook + token 鉴权 + 去重入库 |
+| D.2 Tampermonkey 采集脚本 | ✅ | 2026-08-10 | — | — | scripts/fb-collector.user.js,同源 GraphQL 翻页 + 拟人节流 |
+| D.3 脚本端到端实测 | ⬜ | | | | 待用户装脚本在 FB 主页点采集验证 |

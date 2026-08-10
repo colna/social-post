@@ -5,6 +5,7 @@ import { PlatformModule } from './platform/platform.module';
 import { AccountModule } from './account/account.module';
 import { CrawlerModule } from './crawler/crawler.module';
 import { PostModule } from './post/post.module';
+import { IngestModule } from './ingest/ingest.module';
 
 @Module({
   imports: [
@@ -14,6 +15,7 @@ import { PostModule } from './post/post.module';
     AccountModule,
     CrawlerModule,
     PostModule,
+    IngestModule,
   ],
 })
 export class AppModule {}
