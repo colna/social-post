@@ -406,6 +406,7 @@ export default function HomePage() {
         }}
         width={440}
         initialValues={{ range: [dayjs().subtract(7, 'day'), dayjs()] }}
+        dateFormatter={false}
         modalProps={{ destroyOnClose: true, okText: '开始抓取' }}
         onFinish={async (v) => {
           const target = crawlTarget;
