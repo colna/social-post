@@ -192,10 +192,16 @@ export default function HomePage() {
     {
       title: '文案',
       dataIndex: 'caption',
+      width: 360,
       render: (_, r) =>
         r.caption ? (
           <Typography.Paragraph
-            style={{ marginBottom: 0 }}
+            style={{
+              marginBottom: 0,
+              width: 340,
+              whiteSpace: 'normal',
+              wordBreak: 'break-word',
+            }}
             ellipsis={{ rows: 3, expandable: true, symbol: '展开' }}
           >
             {r.caption}
