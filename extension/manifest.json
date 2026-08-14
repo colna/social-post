@@ -6,7 +6,8 @@
   "permissions": ["storage", "tabs"],
   "host_permissions": [
     "http://localhost/*",
-    "http://127.0.0.1/*"
+    "http://127.0.0.1/*",
+    "https://social-post-server.vercel.app/*"
   ],
   "background": {
     "service_worker": "background.js"
