@@ -9,11 +9,11 @@
     sp_token: 'change-me-ingest-token',
   };
   const cfg = {
-    pageSize: 8, // 单次 GraphQL count
-    maxPages: 25, // 翻页上限(FB 可能翻不了几页就限流)
-    pageDelayMs: 1200, // 每页间隔,拟人节流,降低触发风控
-    readyTries: 12, // 页面就绪重试次数(每次 1.5s)
     hopDelayMs: 3000, // 采集完一个到跳下一个的间隔
+    maxScrolls: 120, // 滚动采集最大滚动轮数
+    scrollWaitMs: 2500, // 每轮滚动后等待 FB 懒加载
+    scrollStale: 4, // 连续 N 轮无新增则停止
+    maxPosts: 0, // 单主页最多采多少帖,0=不限(由 maxScrolls/stale 兜底)
   };
   function getConfig() {
     return new Promise((resolve) =>
@@ -246,58 +246,6 @@
     return ctx;
   }
 
-  function cookie(name) {
-    const m = document.cookie.match(new RegExp('(?:^|; )' + name + '=([^;]*)'));
-    return m ? decodeURIComponent(m[1]) : '';
-  }
-  function jazoest(t) {
-    let s = 0;
-    for (let i = 0; i < t.length; i++) s += t.charCodeAt(i);
-    return '2' + s;
-  }
-
-  // ── 同源 GraphQL 请求(content script 与页面同源,浏览器自动带 httpOnly cookie)──
-  async function gqlPage(ctx, count, cursorVal) {
-    const variables = Object.assign({}, ctx.variables, { count: count });
-    if (cursorVal) variables.cursor = cursorVal;
-    const av = cookie('c_user');
-    const body = new URLSearchParams({
-      av: av,
-      __user: av,
-      __a: '1',
-      __req: '1',
-      __hs: ctx.hs || '',
-      dpr: '1',
-      __ccg: 'EXCELLENT',
-      __rev: ctx.rev || '0',
-      __s: 'a:b:c',
-      __hsi: ctx.hsi || '',
-      __comet_req: '15',
-      fb_dtsg: ctx.fb_dtsg || '',
-      jazoest: jazoest(ctx.fb_dtsg || ''),
-      lsd: ctx.lsd || '',
-      __spin_r: ctx.rev || '0',
-      __spin_b: ctx.spin_b || 'trunk',
-      __spin_t: ctx.spin_t || '0',
-      fb_api_caller_class: 'RelayModern',
-      fb_api_req_friendly_name: 'ProfileCometTimelineFeedQuery',
-      variables: JSON.stringify(variables),
-      server_timings: '1',
-      doc_id: ctx.doc_id || '',
-    });
-    const resp = await fetch('/api/graphql/', {
-      method: 'POST',
-      credentials: 'include',
-      headers: {
-        'content-type': 'application/x-www-form-urlencoded',
-        'x-fb-friendly-name': 'ProfileCometTimelineFeedQuery',
-        'x-fb-lsd': ctx.lsd || '',
-      },
-      body: body.toString(),
-    });
-    return await resp.text();
-  }
-
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
   function embeddedPosts(html) {
@@ -348,97 +296,110 @@
     );
   }
 
-  // ── 等待页面就绪:FB SPA 首屏可能还没塞入 timeline 上下文,重试抠 ──
-  async function waitContext(maxTries) {
-    const n = maxTries || 12;
-    for (let i = 0; i < n; i++) {
-      const html = document.documentElement.outerHTML;
-      const ctx = extractContext(html);
-      if (ctx.fb_dtsg && ctx.doc_id && ctx.user_id) return { ctx, html };
-      if (i === 0 || (i + 1) % 3 === 0)
-        logLine('… 等待页面就绪 ' + (i + 1) + '/' + n +
-          '(dtsg=' + !!ctx.fb_dtsg + ' doc_id=' + !!ctx.doc_id + ' userID=' + !!ctx.user_id + ')');
-      await sleep(1500);
-    }
-    return null;
+  // ── 滚动采集:劫持 FB 自己的 timeline 响应(inject.js MAIN world postMessage)──
+  let _cap = new Map(); // shortcode → PostItem
+  let _captureOn = false;
+  let _scrollAbort = false;
+
+  window.addEventListener('message', (ev) => {
+    if (ev.source !== window) return;
+    const d = ev.data;
+    if (!d || d.source !== 'sp-fb-cap' || !_captureOn) return;
+    try {
+      const { posts } = parseTimeline(d.body);
+      let fresh = 0;
+      for (const p of posts) {
+        if (p.shortcode && !_cap.has(p.shortcode)) {
+          _cap.set(p.shortcode, p);
+          fresh++;
+        }
+      }
+      if (fresh) logLine('  捕获 +' + fresh + ',累计 ' + _cap.size);
+    } catch (e) {}
+  });
+
+  function scrollStep() {
+    // 滚到底触发懒加载;兼容 window / documentElement
+    const h = Math.max(
+      document.body ? document.body.scrollHeight : 0,
+      document.documentElement ? document.documentElement.scrollHeight : 0,
+    );
+    window.scrollTo(0, h);
   }
 
-  // ── 采集当前页并上报,返回结果对象(不 alert,供手动/批量共用)──
-  async function collectAndReport(setStatus) {
+  // 自动滚动 + 捕获 FB 自身 timeline 响应,拿全量帖并上报
+  async function collectByScroll(setStatus) {
     const handle = currentHandle();
     if (!handle) {
       logLine('❌ 当前页面不是可识别的 FB 主页(' + location.pathname + ')');
       return { ok: false, error: '当前页面不是可识别的 FB 主页' };
     }
-    logLine('▶ 开始采集 @' + handle);
+    logLine('▶ 滚动采集 @' + handle);
     const conf = await getConfig();
-    setStatus('等待页面就绪…');
-    const ready = await waitContext(cfg.readyTries);
-    if (!ready) {
-      logLine('❌ 页面未就绪:抠不到 fb_dtsg/doc_id/userID(需登录或页面结构变了)');
-      return { ok: false, handle, error: '未能抠到 fb_dtsg/doc_id/userID(页面未就绪或需登录)' };
+    // 滚动采集靠劫持 FB 自身请求,不需要 fb_dtsg/doc_id;账户信息尽力取,取不到不阻塞
+    setStatus('读取页面信息…');
+    let html = document.documentElement.outerHTML;
+    let ctx = extractContext(html);
+    if (!ctx.user_id) {
+      // 首屏可能未就绪,轻等几轮(不强制三要素齐全)
+      for (let i = 0; i < 6 && !ctx.user_id; i++) {
+        await sleep(1200);
+        html = document.documentElement.outerHTML;
+        ctx = extractContext(html);
+      }
     }
-    const { ctx, html } = ready;
-    logLine('✅ 就绪 doc_id=' + ctx.doc_id + ' userID=' + ctx.user_id + ' name=' + (ctx.name || '?'));
+    const displayName =
+      ctx.name || (document.title || '').replace(/\s*\|\s*Facebook.*$/i, '').trim() || null;
+    logLine('账户信息:userID=' + (ctx.user_id || '?') + ' name=' + (displayName || '?'));
 
-    const all = [];
-    const seen = new Set();
-    // 先收页面内嵌的初始帖(兜底)
+    _cap = new Map();
+    _scrollAbort = false;
+    _captureOn = true;
+    // seed:页面内嵌的初始帖
     for (const p of embeddedPosts(html)) {
-      if (!seen.has(p.shortcode)) {
-        seen.add(p.shortcode);
-        all.push(p);
-      }
+      if (p.shortcode) _cap.set(p.shortcode, p);
     }
-    logLine('内嵌初始帖:' + all.length + ' 条');
+    logLine('内嵌 seed ' + _cap.size + ' 帖,开始自动滚动(FB 自己加载,不触发软封)…');
 
-    let cursor = null;
-    let stopped = '';
-    for (let page = 0; page < cfg.maxPages; page++) {
-      setStatus('抓取第 ' + (page + 1) + ' 页…(已 ' + all.length + ' 帖)');
-      let raw;
-      try {
-        raw = await gqlPage(ctx, cfg.pageSize, cursor);
-      } catch (e) {
-        stopped = '网络错误,停止:' + e;
-        logLine('❌ 第' + (page + 1) + '页 网络错误:' + e);
+    let last = _cap.size;
+    let stale = 0;
+    for (let i = 0; i < cfg.maxScrolls; i++) {
+      if (_scrollAbort) {
+        logLine('⏹ 用户停止滚动');
         break;
       }
-      if (raw.indexOf('"error":1357054') >= 0 || raw.indexOf('"errors"') === 0) {
-        stopped = 'FB 限流(1357054),停止翻页';
-        logLine('⚠️ 第' + (page + 1) + '页 FB 限流(1357054),停止翻页 · 响应片段:' + raw.slice(0, 100));
+      scrollStep();
+      await sleep(cfg.scrollWaitMs);
+      const size = _cap.size;
+      setStatus('滚动 ' + (i + 1) + '/' + cfg.maxScrolls + ' · 已 ' + size + ' 帖');
+      if (size > last) {
+        last = size;
+        stale = 0;
+      } else {
+        stale++;
+      }
+      if (stale >= cfg.scrollStale) {
+        logLine('连续 ' + stale + ' 轮无新增,判定到底,停止滚动');
         break;
       }
-      const { posts, cursor: next, hasNext } = parseTimeline(raw);
-      let fresh = 0;
-      for (const p of posts) {
-        if (!seen.has(p.shortcode)) {
-          seen.add(p.shortcode);
-          all.push(p);
-          fresh++;
-        }
+      if (cfg.maxPosts && size >= cfg.maxPosts) {
+        logLine('达到设定上限 ' + cfg.maxPosts + ' 帖,停止');
+        break;
       }
-      logLine(
-        '第' + (page + 1) + '页 → 本页解析 ' + posts.length + ' 帖,新增 ' + fresh +
-        ',累计 ' + all.length + ',hasNext=' + hasNext + (next ? ' cursor有' : ' 无cursor'),
-      );
-      if (!posts.length) logLine('   ↳ 本页 0 帖,响应片段:' + raw.slice(0, 160));
-      if (!posts.length || (!fresh && !hasNext)) break;
-      if (!hasNext || !next) break;
-      cursor = next;
-      await sleep(cfg.pageDelayMs);
     }
+    _captureOn = false;
 
+    const all = [..._cap.values()];
+    logLine('滚动结束,共 ' + all.length + ' 帖');
     if (!all.length) {
-      logLine('❌ 没采集到任何帖子' + (stopped ? '(' + stopped + ')' : ''));
-      return { ok: false, handle, error: '没采集到帖子(被限流或无公开帖)' + (stopped ? ' · ' + stopped : '') };
+      return { ok: false, handle, error: '没采集到帖子(未捕获到 timeline 响应)' };
     }
 
     const payload = {
       handle: handle,
       account: {
-        displayName: ctx.name || undefined,
-        externalId: ctx.user_id,
+        displayName: displayName || undefined,
+        externalId: ctx.user_id || undefined,
         externalUrl: 'https://www.facebook.com/' + handle,
       },
       posts: all,
@@ -460,7 +421,6 @@
       handle,
       added: res.added != null ? res.added : null,
       total: res.total != null ? res.total : null,
-      note: stopped || '',
     };
   }
 
@@ -486,7 +446,7 @@
 
     const row = document.createElement('div');
     row.style.cssText = 'display:flex;gap:6px;align-items:center;flex-wrap:wrap;';
-    const btn = mkBtn('采集本页', '#1877f2', '#fff');
+    const btn = mkBtn('滚动采集本页', '#1877f2', '#fff');
     const copyBtn = mkBtn('复制日志', '#f0f2f5', '#333');
     const clearBtn = mkBtn('清空', '#f0f2f5', '#333');
     row.appendChild(btn);
@@ -503,20 +463,29 @@
       'border-radius:6px;padding:8px;font:11px/1.5 ui-monospace,Menlo,Consolas,monospace;' +
       'white-space:pre-wrap;word-break:break-all;';
 
+    let _running = false;
     btn.addEventListener('click', async () => {
-      btn.disabled = true;
+      // 运行中点击 = 停止滚动
+      if (_running) {
+        _scrollAbort = true;
+        btn.textContent = '停止中…';
+        return;
+      }
+      _running = true;
+      btn.textContent = '停止采集';
       try {
-        const r = await collectAndReport((t) => setStatus(t));
+        const r = await collectByScroll((t) => setStatus(t));
         setStatus(
           r.ok
-            ? '✅ @' + r.handle + ' 新增 ' + r.added + ',共 ' + r.total + (r.note ? ' · ' + r.note : '')
+            ? '✅ @' + r.handle + ' 新增 ' + r.added + ',账户共 ' + r.total
             : '❌ ' + (r.handle ? '@' + r.handle + ' ' : '') + r.error,
         );
       } catch (e) {
         setStatus('❌ 异常:' + e);
         logLine('❌ 异常:' + e);
       } finally {
-        setTimeout(() => (btn.disabled = false), 1500);
+        _running = false;
+        btn.textContent = '滚动采集本页';
       }
     });
     copyBtn.addEventListener('click', async () => {
@@ -592,7 +561,7 @@
     setStatus(prog + ':采集 @' + cur.handle + ' …');
     let r;
     try {
-      r = await collectAndReport((t) => setStatus(prog + ' @' + cur.handle + ':' + t));
+      r = await collectByScroll((t) => setStatus(prog + ' @' + cur.handle + ':' + t));
     } catch (e) {
       r = { ok: false, handle: cur.handle, error: '异常:' + e };
     }

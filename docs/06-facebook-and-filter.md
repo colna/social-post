@@ -147,3 +147,25 @@ FB Comet 分享数在 feedback 的 `share_count.count`(退回 `reshare_count`),�
 | G.2 批量状态机 + 自动跳转驱动 | ✅ | 2026-08-14 | node --check | storage 存活 + 重入保护 |
 | G.3 popup 批量 UI + 解析 + 进度刷新 | ✅ | 2026-08-14 | node --check | 多行链接/handle |
 | G.4 实机走查(多主页) | ⬜ | | | 待用户填多个链接跑一遍 |
+
+## 八 · Phase H:滚动采集(劫持 FB 自身 timeline 响应,拿全量帖)(2026-08-14)
+
+背景:实测 uksmartgroup 只入库 1 帖——www 页只内嵌 1 条,脚本**自发** GraphQL 翻页发 1~2 次即被 FB 软封(`1357054`)。用户提「注入脚本操作 DOM 获取」。比抠混淆 DOM 更稳的做法:**不自己发请求,劫持 FB 自己发的 timeline 响应**。
+
+**方案**:
+- `inject.js`(**MAIN world**,`document_start`):content script 在隔离世界拿不到页面 `window.fetch`,故在 MAIN 世界 patch。命中 `/api/graphql/` 且请求体含 `Timeline` 的响应,`response.clone().text()` 读出后 `postMessage({source:'sp-fb-cap',body})` 交给 content script(只克隆读、原样返回,不干扰 FB)。
+- `content.js`:
+  - 监听 `message` → `parseTimeline(body)` → Story 节点按 shortcode 累积进 `_cap` Map(复用现成 parser,拿干净 JSON:精确点赞/评论/转发/时间)。
+  - `collectByScroll`:seed 内嵌帖 → **自动滚到底**(`window.scrollTo`)触发 FB 用**它自己会话**懒加载后续帖(正常行为,不软封)→ 每 `scrollWaitMs`(2.5s)检查 `_cap` 增长,连续 `scrollStale`(4)轮无新增判定到底停止,或达 `maxScrolls`(120)/`maxPosts` 上限 → 上报。
+  - 主按钮改「滚动采集本页」,运行中可点「停止采集」(`_scrollAbort`);批量驱动也切到 `collectByScroll`。
+- 因滚动采集不需 `fb_dtsg/doc_id`(那是自发 graphql 用的),**删掉旧自发 graphql 路径**(`collectAndReport`/`gqlPage`/`cookie`/`jazoest`/`waitContext`);账户 displayName 尽力取(extractContext 或 document.title),取不到不阻塞。
+- `manifest`:加 MAIN world 注入 content script;版本 → 1.2.0。`pack.sh` 白名单加 `inject.js`。
+
+**关键点**:全程是 FB 自己发请求 → 不触发 `1357054`;字段解析逻辑复用 `parseTimeline`,拿到的是结构化 JSON 而非 DOM 抠取。代价:滚动单主页耗时随帖子数增长(120 轮 ×2.5s 上限 ~5min)。
+
+| Task | 状态 | 完成时间 | 测试 | 备注 |
+|------|------|----------|------|------|
+| H.1 inject.js MAIN world 劫持 fetch | ✅ | 2026-08-14 | node --check | postMessage 交 content |
+| H.2 collectByScroll 自动滚动 + 捕获累积 | ✅ | 2026-08-14 | node --check | stale/maxScrolls 兜底 + 停止 |
+| H.3 删旧自发 graphql 路径 + 放宽就绪 | ✅ | 2026-08-14 | node --check | 手动/批量切滚动 |
+| H.4 实机走查(全量帖) | ⬜ | | | 待用户滚动采集 uksmartgroup 验证帖数 |

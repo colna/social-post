@@ -7,7 +7,7 @@ DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$DIR"
 
 # 需要进包的文件(白名单,避免把 dist/pack.sh 等打进去)
-FILES=(manifest.json background.js content.js popup.html popup.js)
+FILES=(manifest.json background.js inject.js content.js popup.html popup.js)
 
 for f in "${FILES[@]}"; do
   [ -f "$f" ] || { echo "缺少文件:$f" >&2; exit 1; }
