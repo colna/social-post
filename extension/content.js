@@ -7,6 +7,7 @@
   const DEFAULTS = {
     sp_server: 'https://social-post-server.vercel.app/api',
     sp_token: 'change-me-ingest-token',
+    sp_days: 7, // 只采最近 N 天的帖;0/空 = 不限
   };
   const cfg = {
     hopDelayMs: 3000, // 采集完一个到跳下一个的间隔
@@ -304,6 +305,19 @@
   let _injectLoaded = false;
   let _gqlSeen = 0; // 见到的 /graphql 请求数
   let _capMsgs = 0; // 命中 timeline 的响应数
+  let _since = 0; // 日期下界(unix 秒),0=不限
+  let _oldCount = 0; // 遇到早于窗口的帖数(用于判定翻过窗口)
+
+  // 单条帖是否在采集日期窗口内;顺带累计"过早"计数
+  function inDateWindow(p) {
+    if (!_since) return true;
+    if (typeof p.takenAt !== 'number') return true; // 无时间不误杀
+    if (p.takenAt < _since) {
+      _oldCount++;
+      return false;
+    }
+    return true;
+  }
 
   window.addEventListener('message', (ev) => {
     if (ev.source !== window) return;
@@ -324,12 +338,12 @@
       const { posts } = parseTimeline(d.body);
       let fresh = 0;
       for (const p of posts) {
-        if (p.shortcode && !_cap.has(p.shortcode)) {
-          _cap.set(p.shortcode, p);
-          fresh++;
-        }
+        if (!p.shortcode || _cap.has(p.shortcode)) continue;
+        if (!inDateWindow(p)) continue;
+        _cap.set(p.shortcode, p);
+        fresh++;
       }
-      if (fresh) logLine('  捕获 +' + fresh + ',累计 ' + _cap.size);
+      if (fresh) logLine('  捕获 +' + fresh + ',窗口内累计 ' + _cap.size);
     } catch (e) {}
   });
 
@@ -371,13 +385,24 @@
     _scrollAbort = false;
     _gqlSeen = 0;
     _capMsgs = 0;
+    _oldCount = 0;
+    // 日期窗口:默认最近 sp_days 天
+    const days = Number(conf.sp_days);
+    const nowSec = Math.floor(Date.now() / 1000);
+    _since = days && days > 0 ? nowSec - days * 86400 : 0;
+    logLine(
+      '日期限制:' +
+        (_since
+          ? '最近 ' + days + ' 天(>= ' + new Date(_since * 1000).toLocaleString('zh-CN') + ')'
+          : '不限'),
+    );
     _captureOn = true;
     logLine('inject 挂载状态:' + (_injectLoaded ? '已挂载' : '⚠️ 尚未收到挂载信号'));
-    // seed:页面内嵌的初始帖
+    // seed:页面内嵌的初始帖(同样按日期窗口过滤)
     for (const p of embeddedPosts(html)) {
-      if (p.shortcode) _cap.set(p.shortcode, p);
+      if (p.shortcode && !_cap.has(p.shortcode) && inDateWindow(p)) _cap.set(p.shortcode, p);
     }
-    logLine('内嵌 seed ' + _cap.size + ' 帖,开始自动滚动(FB 自己加载,不触发软封)…');
+    logLine('内嵌 seed ' + _cap.size + ' 帖(窗口内),开始自动滚动(FB 自己加载,不触发软封)…');
 
     let last = _cap.size;
     let stale = 0;
@@ -401,6 +426,11 @@
       } else {
         stale++;
       }
+      // 时间线倒序:遇到足够多"早于窗口"的帖(容忍置顶旧帖)即翻过窗口,停止
+      if (_since && _oldCount >= 3) {
+        logLine('已翻过日期窗口(遇到 ' + _oldCount + ' 条更早的帖),停止滚动');
+        break;
+      }
       // 至少滚 minScrolls 轮再允许因"无新增"停止,给 FB 反应时间
       if (i + 1 >= cfg.minScrolls && stale >= cfg.scrollStale) {
         logLine('连续 ' + stale + ' 轮无新增,判定到底,停止滚动');
@@ -421,11 +451,14 @@
       logLine('⚠️ 全程没见到任何 /graphql 请求:FB 可能没触发懒加载(页面没滚动?)或走了别的通道');
     else if (_capMsgs === 0)
       logLine('⚠️ 见到 graphql 但没有 timeline 响应:该主页 feed 结构可能不同,需调整匹配');
-    if (all.length <= 1) {
+    if (_since) logLine('日期窗口外(更早)略过 ' + _oldCount + ' 帖');
+    if (all.length === 0) {
       return {
         ok: false,
         handle,
-        error: '只拿到内嵌 ' + all.length + ' 帖(graphql ' + _gqlSeen + '/timeline ' + _capMsgs + ',inject=' + _injectLoaded + ')',
+        error:
+          '窗口内 0 帖(graphql ' + _gqlSeen + '/timeline ' + _capMsgs +
+          '/窗口外 ' + _oldCount + ',inject=' + _injectLoaded + ')',
       };
     }
 

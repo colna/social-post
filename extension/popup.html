@@ -78,6 +78,9 @@
     <label for="token">ingest token</label>
     <input id="token" placeholder="change-me-ingest-token" />
     <div class="hint">须与 server 环境变量 INGEST_TOKEN 一致</div>
+    <label for="days">采集最近 N 天</label>
+    <input id="days" type="number" min="0" placeholder="7" />
+    <div class="hint">只采最近 N 天发布的帖(默认 7);留空或 0 = 不限日期</div>
     <button id="save" class="ghost">保存配置</button>
     <div id="saved"></div>
 

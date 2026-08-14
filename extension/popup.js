@@ -1,10 +1,12 @@
 const DEFAULTS = {
   sp_server: 'https://social-post-server.vercel.app/api',
   sp_token: 'change-me-ingest-token',
+  sp_days: 7,
 };
 
 const $server = document.getElementById('server');
 const $token = document.getElementById('token');
+const $days = document.getElementById('days');
 const $saved = document.getElementById('saved');
 const $targets = document.getElementById('targets');
 const $batchMsg = document.getElementById('batchMsg');
@@ -13,13 +15,16 @@ const $batchMsg = document.getElementById('batchMsg');
 chrome.storage.local.get(DEFAULTS, (cfg) => {
   $server.value = cfg.sp_server;
   $token.value = cfg.sp_token;
+  $days.value = cfg.sp_days;
 });
 
 document.getElementById('save').addEventListener('click', () => {
+  const days = parseInt($days.value, 10);
   chrome.storage.local.set(
     {
       sp_server: $server.value.trim() || DEFAULTS.sp_server,
       sp_token: $token.value.trim() || DEFAULTS.sp_token,
+      sp_days: Number.isFinite(days) && days >= 0 ? days : DEFAULTS.sp_days,
     },
     () => {
       $saved.textContent = '✅ 已保存';
