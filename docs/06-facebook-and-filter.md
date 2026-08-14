@@ -79,3 +79,17 @@
 | D.1 server ingest 端点 | ✅ | 2026-08-10 | 13 passed | — | POST /api/ingest/facebook + token 鉴权 + 去重入库 |
 | D.2 Tampermonkey 采集脚本 | ✅ | 2026-08-10 | — | — | scripts/fb-collector.user.js,同源 GraphQL 翻页 + 拟人节流 |
 | D.3 脚本端到端实测 | ⬜ | | | | 待用户装脚本在 FB 主页点采集验证 |
+
+## 五 · Phase E:补转发数 + 抓取时间精确到时分(2026-08-14)
+
+背景:复盘发现 5 项需求里「转发/分享数」虽全链路字段齐(schema/types/UI「转发」列),但 FB 两条路径都没解析 → `shareCount` 恒 None;抓取时间选择是「按天」粒度。用户定:补转发数(走浏览器脚本路径)、抓取时间精确到时分。
+
+FB Comet 分享数在 feedback 的 `share_count.count`(退回 `reshare_count`),按 `reaction_count` 同款「递归找 key + best-effort」提取。
+
+| Task | 状态 | 完成时间 | 测试 | 备注 |
+|------|------|----------|------|------|
+| E.1 parser 补 share_count + fixture 单测 | ✅ | 2026-08-14 | 9 passed | `_post_share_count`;fixture 111 加分享数、222 验 None |
+| E.2 采集脚本 pickShareCount | ✅ | 2026-08-14 | — | `fb-collector.user.js`;server ingest 已支持接收 |
+| E.3 抓取弹窗改 DateTime 精确到时分 | ✅ | 2026-08-14 | tsc/lint/11 passed | `ProFormDateTimeRangePicker`,since/until 用确切时间点 |
+| E.4 全量测试 | ✅ | 2026-08-14 | crawler 32 + web 11 | tsc/lint 全过 |
+| E.5 实机走查 uksmartgroup | ⬜ | | | 待用户装/更新脚本在 FB 主页点采集,验证「转发」列有值 |

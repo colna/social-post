@@ -7,7 +7,7 @@ import {
   ProTable,
   ModalForm,
   ProFormText,
-  ProFormDateRangePicker,
+  ProFormDateTimeRangePicker,
   ProFormDigit,
   ProDescriptions,
   type ActionType,
@@ -434,8 +434,8 @@ export default function HomePage() {
           if (!target) return true;
           const opts: { maxPosts?: number; since?: number; until?: number } = {};
           if (v.range?.[0] && v.range?.[1]) {
-            opts.since = v.range[0].startOf('day').unix();
-            opts.until = v.range[1].endOf('day').unix();
+            opts.since = v.range[0].unix();
+            opts.until = v.range[1].unix();
           }
           if (v.limit) opts.maxPosts = v.limit;
           setCrawlTarget(null);
@@ -443,11 +443,11 @@ export default function HomePage() {
           return true;
         }}
       >
-        <ProFormDateRangePicker
+        <ProFormDateTimeRangePicker
           name="range"
-          label="时间段(选填,默认近 7 天)"
-          fieldProps={{ allowClear: true }}
-          tooltip="只抓该时间段内发布的帖子;清空则不限时间"
+          label="时间段(选填,精确到时分)"
+          fieldProps={{ allowClear: true, format: 'YYYY-MM-DD HH:mm' }}
+          tooltip="只抓该时间段内发布的帖子(精确到时分);清空则不限时间"
         />
         <ProFormDigit
           name="limit"
