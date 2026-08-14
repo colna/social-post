@@ -6,6 +6,7 @@ export default defineConfig({
   esbuildMinifyIIFE: true,
   plugins: ['@umijs/plugins/dist/tailwindcss'],
   tailwindcss: {},
+  favicons: ['/favicon.svg'],
   routes: [
     {
       path: '/',

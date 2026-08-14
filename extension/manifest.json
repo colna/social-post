@@ -1,9 +1,14 @@
 {
   "manifest_version": 3,
   "name": "social-post · Facebook 采集",
-  "version": "1.4.0",
+  "version": "1.4.1",
   "description": "在已登录的 facebook.com 主页一键采集帖子,直接入库 social-post。走真实浏览器会话,规避 FB 对服务器侧自动化 GraphQL 的软封。",
   "permissions": ["storage", "tabs"],
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
   "host_permissions": [
     "http://localhost/*",
     "http://127.0.0.1/*",
@@ -14,7 +19,12 @@
   },
   "action": {
     "default_popup": "popup.html",
-    "default_title": "social-post 采集设置"
+    "default_title": "social-post 采集设置",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
   },
   "content_scripts": [
     {
