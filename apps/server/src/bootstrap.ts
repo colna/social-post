@@ -11,7 +11,11 @@ const server = express();
 let ready: Promise<void> | null = null;
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule, new ExpressAdapter(server));
+  const app = await NestFactory.create(AppModule, new ExpressAdapter(server), {
+    bodyParser: false,
+  });
+  // 浏览器采集可能一次上报几百帖 → 放大 JSON body 上限(默认仅 100kb)
+  server.use(express.json({ limit: '5mb' }));
   app.setGlobalPrefix('api');
   app.enableCors({ origin: true });
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));

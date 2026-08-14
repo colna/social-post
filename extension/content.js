@@ -16,6 +16,7 @@
     scrollStale: 6, // 连续 N 轮无新增则停止
     minScrolls: 6, // 至少滚这么多轮再允许因"无新增"停止(给 FB 反应时间)
     maxPosts: 0, // 单主页最多采多少帖,0=不限(由 maxScrolls/stale 兜底)
+    uploadChunk: 100, // 上报分批大小(避免 413 body 过大)
   };
   function getConfig() {
     return new Promise((resolve) =>
@@ -334,6 +335,7 @@
     }
     if (d.source !== 'sp-fb-cap' || !_captureOn) return;
     _capMsgs++;
+    _injectLoaded = true; // 收到捕获即证明 MAIN world hook 生效(loaded 信号可能在监听挂载前已发)
     try {
       const { posts } = parseTimeline(d.body);
       let fresh = 0;
@@ -462,33 +464,45 @@
       };
     }
 
-    const payload = {
-      handle: handle,
-      account: {
-        displayName: displayName || undefined,
-        externalId: ctx.user_id || undefined,
-        externalUrl: 'https://www.facebook.com/' + handle,
-      },
-      posts: all,
+    // 分批上报:一次几百帖 body 太大会 413,按 cfg.uploadChunk 切块
+    const account = {
+      displayName: displayName || undefined,
+      externalId: ctx.user_id || undefined,
+      externalUrl: 'https://www.facebook.com/' + handle,
     };
-    setStatus('入库中…(' + all.length + ' 帖)');
-    logLine('⬆ 上报 ' + all.length + ' 帖 → ' + conf.sp_server);
-    const r = await postToServer(conf.sp_server, conf.sp_token, payload);
-    if (!r.ok) {
-      logLine('❌ 入库失败 ' + r.status + ':' + String(r.text).slice(0, 120));
-      return { ok: false, handle, error: '入库失败 ' + r.status + ':' + String(r.text).slice(0, 120) };
+    const chunkSize = cfg.uploadChunk;
+    let addedSum = 0;
+    let totalLast = null;
+    const nChunks = Math.ceil(all.length / chunkSize);
+    for (let ci = 0; ci < nChunks; ci++) {
+      const chunk = all.slice(ci * chunkSize, (ci + 1) * chunkSize);
+      setStatus('入库中…第 ' + (ci + 1) + '/' + nChunks + ' 批(' + chunk.length + ' 帖)');
+      logLine('⬆ 上报第 ' + (ci + 1) + '/' + nChunks + ' 批:' + chunk.length + ' 帖 → ' + conf.sp_server);
+      const r = await postToServer(conf.sp_server, conf.sp_token, {
+        handle: handle,
+        account: account,
+        posts: chunk,
+      });
+      if (!r.ok) {
+        logLine('❌ 第 ' + (ci + 1) + ' 批入库失败 ' + r.status + ':' + String(r.text).slice(0, 120));
+        return {
+          ok: false,
+          handle,
+          error:
+            '入库失败(第 ' + (ci + 1) + '/' + nChunks + ' 批,已入 ' + addedSum + '):' +
+            r.status + ' ' + String(r.text).slice(0, 100),
+        };
+      }
+      let res = {};
+      try {
+        res = JSON.parse(r.text);
+      } catch (e) {}
+      if (typeof res.added === 'number') addedSum += res.added;
+      if (typeof res.total === 'number') totalLast = res.total;
+      logLine('  ✅ 第 ' + (ci + 1) + ' 批:新增 ' + res.added + ',账户共 ' + res.total);
     }
-    let res = {};
-    try {
-      res = JSON.parse(r.text);
-    } catch (e) {}
-    logLine('✅ server:发送 ' + all.length + ',新增 ' + res.added + ',账户共 ' + res.total + ' 帖');
-    return {
-      ok: true,
-      handle,
-      added: res.added != null ? res.added : null,
-      total: res.total != null ? res.total : null,
-    };
+    logLine('✅ 全部上报完成:发送 ' + all.length + ',累计新增 ' + addedSum + ',账户共 ' + totalLast + ' 帖');
+    return { ok: true, handle, added: addedSum, total: totalLast };
   }
 
   // ── 浮动面板 UI(手动按钮 + 状态 + 外显日志)──
