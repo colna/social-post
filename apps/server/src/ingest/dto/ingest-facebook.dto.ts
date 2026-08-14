@@ -56,6 +56,22 @@ export class IngestAccountDto {
 
   @IsOptional()
   @IsString()
+  bio?: string;
+
+  @IsOptional()
+  @IsInt()
+  followerCount?: number;
+
+  @IsOptional()
+  @IsInt()
+  followingCount?: number;
+
+  @IsOptional()
+  @IsInt()
+  mediaCount?: number;
+
+  @IsOptional()
+  @IsString()
   externalId?: string;
 
   @IsOptional()

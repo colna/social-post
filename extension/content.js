@@ -358,6 +358,44 @@
     window.scrollTo(0, h);
   }
 
+  // "4.7K"/"1.2M"/"1,234"/"4.7万" → 整数
+  function parseCount(str) {
+    if (!str) return null;
+    const m = String(str).replace(/[,,\s]/g, '').match(/([\d.]+)\s*([KMBkmb万亿])?/);
+    if (!m) return null;
+    let n = parseFloat(m[1]);
+    if (isNaN(n)) return null;
+    const u = (m[2] || '').toUpperCase();
+    if (u === 'K') n *= 1e3;
+    else if (u === 'M') n *= 1e6;
+    else if (u === 'B') n *= 1e9;
+    else if (u === '万') n *= 1e4;
+    else if (u === '亿') n *= 1e8;
+    return Math.round(n);
+  }
+
+  // 从渲染文本 + meta 提取账户资料(粉丝/关注/简介),读可见文本抗类名混淆
+  function extractProfile() {
+    const out = {};
+    const text = (document.body && document.body.innerText) || '';
+    let m;
+    if ((m = text.match(/([\d.,]+\s*[KMB]?)\s*followers/i)))
+      out.followerCount = parseCount(m[1]);
+    else if ((m = text.match(/([\d.,]+[KMB万亿]?)\s*(?:位)?(?:粉丝|关注者)/)))
+      out.followerCount = parseCount(m[1]);
+    if ((m = text.match(/([\d.,]+\s*[KMB]?)\s*following\b/i)))
+      out.followingCount = parseCount(m[1]);
+    else if ((m = text.match(/正在关注\s*([\d.,]+[KMB万亿]?)/)))
+      out.followingCount = parseCount(m[1]);
+    // 页面"赞"数(公共主页)作粉丝近似
+    if (out.followerCount == null && (m = text.match(/([\d.,]+\s*[KMB]?)\s*likes/i)))
+      out.followerCount = parseCount(m[1]);
+    // 简介:og:description 最稳
+    const og = document.querySelector('meta[property="og:description"]');
+    if (og && og.content) out.bio = og.content.trim().slice(0, 500);
+    return out;
+  }
+
   // 自动滚动 + 捕获 FB 自身 timeline 响应,拿全量帖并上报
   async function collectByScroll(setStatus) {
     const handle = currentHandle();
@@ -464,11 +502,21 @@
       };
     }
 
+    // 账户资料(粉丝/关注/简介)从渲染文本 + meta 提取
+    const prof = extractProfile();
+    logLine(
+      '账户资料:粉丝=' + (prof.followerCount != null ? prof.followerCount : '?') +
+      ' 关注=' + (prof.followingCount != null ? prof.followingCount : '?') +
+      ' 简介=' + (prof.bio ? '有' : '?'),
+    );
     // 分批上报:一次几百帖 body 太大会 413,按 cfg.uploadChunk 切块
     const account = {
       displayName: displayName || undefined,
       externalId: ctx.user_id || undefined,
       externalUrl: 'https://www.facebook.com/' + handle,
+      followerCount: prof.followerCount != null ? prof.followerCount : undefined,
+      followingCount: prof.followingCount != null ? prof.followingCount : undefined,
+      bio: prof.bio || undefined,
     };
     const chunkSize = cfg.uploadChunk;
     let addedSum = 0;
