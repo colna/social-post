@@ -136,16 +136,19 @@ export default function HomePage() {
       valueType: 'option',
       width: 220,
       render: (_, r) => [
-        <Button
-          key="crawl"
-          type="link"
-          size="small"
-          icon={<CloudDownloadOutlined />}
-          loading={crawlingId === r.id}
-          onClick={() => setCrawlTarget(r)}
-        >
-          抓取
-        </Button>,
+        // Facebook 走浏览器扩展采集,不用服务端抓取,故隐藏抓取入口
+        platform !== 'facebook' && (
+          <Button
+            key="crawl"
+            type="link"
+            size="small"
+            icon={<CloudDownloadOutlined />}
+            loading={crawlingId === r.id}
+            onClick={() => setCrawlTarget(r)}
+          >
+            抓取
+          </Button>
+        ),
         <Button
           key="posts"
           type="link"
@@ -366,7 +369,7 @@ export default function HomePage() {
         width={760}
         title={drawerAccount ? `@${drawerAccount.handle} 的帖子` : ''}
         extra={
-          drawerAccount && (
+          drawerAccount && platform !== 'facebook' ? (
             <Button
               type="primary"
               icon={<CloudDownloadOutlined />}
@@ -375,7 +378,7 @@ export default function HomePage() {
             >
               抓取
             </Button>
-          )
+          ) : null
         }
       >
         {drawerAccount && (
