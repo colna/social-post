@@ -27,6 +27,29 @@
     return new Promise((resolve) => chrome.storage.local.set(obj, resolve));
   }
 
+  // ── 外显日志(存 chrome.storage.local.sp_log,批量跳转不丢)──
+  let _logEl = null;
+  let _logBuf = [];
+  let _saveTimer = null;
+  function _renderLog() {
+    if (_logEl) {
+      _logEl.textContent = _logBuf.join('\n');
+      _logEl.scrollTop = _logEl.scrollHeight;
+    }
+  }
+  function logLine(msg) {
+    const ts = new Date().toLocaleTimeString('zh-CN', { hour12: false });
+    _logBuf.push('[' + ts + '] ' + msg);
+    if (_logBuf.length > 400) _logBuf = _logBuf.slice(-400);
+    _renderLog();
+    try {
+      console.log('[social-post]', msg);
+    } catch (e) {}
+    // 防抖存储,供跨页面导航后续显
+    if (_saveTimer) clearTimeout(_saveTimer);
+    _saveTimer = setTimeout(() => storageSet({ sp_log: _logBuf }), 400);
+  }
+
   // ── 递归工具(与 parsers/facebook.py 同逻辑)──
   function findAll(obj, key, out) {
     out = out || [];
@@ -327,10 +350,14 @@
 
   // ── 等待页面就绪:FB SPA 首屏可能还没塞入 timeline 上下文,重试抠 ──
   async function waitContext(maxTries) {
-    for (let i = 0; i < (maxTries || 12); i++) {
+    const n = maxTries || 12;
+    for (let i = 0; i < n; i++) {
       const html = document.documentElement.outerHTML;
       const ctx = extractContext(html);
       if (ctx.fb_dtsg && ctx.doc_id && ctx.user_id) return { ctx, html };
+      if (i === 0 || (i + 1) % 3 === 0)
+        logLine('… 等待页面就绪 ' + (i + 1) + '/' + n +
+          '(dtsg=' + !!ctx.fb_dtsg + ' doc_id=' + !!ctx.doc_id + ' userID=' + !!ctx.user_id + ')');
       await sleep(1500);
     }
     return null;
@@ -340,15 +367,19 @@
   async function collectAndReport(setStatus) {
     const handle = currentHandle();
     if (!handle) {
+      logLine('❌ 当前页面不是可识别的 FB 主页(' + location.pathname + ')');
       return { ok: false, error: '当前页面不是可识别的 FB 主页' };
     }
+    logLine('▶ 开始采集 @' + handle);
     const conf = await getConfig();
     setStatus('等待页面就绪…');
     const ready = await waitContext(cfg.readyTries);
     if (!ready) {
+      logLine('❌ 页面未就绪:抠不到 fb_dtsg/doc_id/userID(需登录或页面结构变了)');
       return { ok: false, handle, error: '未能抠到 fb_dtsg/doc_id/userID(页面未就绪或需登录)' };
     }
     const { ctx, html } = ready;
+    logLine('✅ 就绪 doc_id=' + ctx.doc_id + ' userID=' + ctx.user_id + ' name=' + (ctx.name || '?'));
 
     const all = [];
     const seen = new Set();
@@ -359,6 +390,7 @@
         all.push(p);
       }
     }
+    logLine('内嵌初始帖:' + all.length + ' 条');
 
     let cursor = null;
     let stopped = '';
@@ -369,10 +401,12 @@
         raw = await gqlPage(ctx, cfg.pageSize, cursor);
       } catch (e) {
         stopped = '网络错误,停止:' + e;
+        logLine('❌ 第' + (page + 1) + '页 网络错误:' + e);
         break;
       }
       if (raw.indexOf('"error":1357054') >= 0 || raw.indexOf('"errors"') === 0) {
         stopped = 'FB 限流(1357054),停止翻页';
+        logLine('⚠️ 第' + (page + 1) + '页 FB 限流(1357054),停止翻页 · 响应片段:' + raw.slice(0, 100));
         break;
       }
       const { posts, cursor: next, hasNext } = parseTimeline(raw);
@@ -384,6 +418,11 @@
           fresh++;
         }
       }
+      logLine(
+        '第' + (page + 1) + '页 → 本页解析 ' + posts.length + ' 帖,新增 ' + fresh +
+        ',累计 ' + all.length + ',hasNext=' + hasNext + (next ? ' cursor有' : ' 无cursor'),
+      );
+      if (!posts.length) logLine('   ↳ 本页 0 帖,响应片段:' + raw.slice(0, 160));
       if (!posts.length || (!fresh && !hasNext)) break;
       if (!hasNext || !next) break;
       cursor = next;
@@ -391,6 +430,7 @@
     }
 
     if (!all.length) {
+      logLine('❌ 没采集到任何帖子' + (stopped ? '(' + stopped + ')' : ''));
       return { ok: false, handle, error: '没采集到帖子(被限流或无公开帖)' + (stopped ? ' · ' + stopped : '') };
     }
 
@@ -404,14 +444,17 @@
       posts: all,
     };
     setStatus('入库中…(' + all.length + ' 帖)');
+    logLine('⬆ 上报 ' + all.length + ' 帖 → ' + conf.sp_server);
     const r = await postToServer(conf.sp_server, conf.sp_token, payload);
     if (!r.ok) {
+      logLine('❌ 入库失败 ' + r.status + ':' + String(r.text).slice(0, 120));
       return { ok: false, handle, error: '入库失败 ' + r.status + ':' + String(r.text).slice(0, 120) };
     }
     let res = {};
     try {
       res = JSON.parse(r.text);
     } catch (e) {}
+    logLine('✅ server:发送 ' + all.length + ',新增 ' + res.added + ',账户共 ' + res.total + ' 帖');
     return {
       ok: true,
       handle,
@@ -421,49 +464,104 @@
     };
   }
 
-  // ── 浮动面板 UI(手动按钮 + 状态,批量进度也走这里)──
-  let _btn = null;
+  // ── 浮动面板 UI(手动按钮 + 状态 + 外显日志)──
   let _status = null;
+  function mkBtn(text, bg, color) {
+    const b = document.createElement('button');
+    b.textContent = text;
+    b.style.cssText =
+      'background:' + bg + ';color:' + color + ';border:0;border-radius:6px;' +
+      'padding:6px 10px;cursor:pointer;font-weight:600;font-size:12px;';
+    return b;
+  }
   function mountButton() {
     if (document.getElementById('sp-fb-collect')) return;
     if (!document.body) return;
     const box = document.createElement('div');
     box.id = 'sp-fb-collect';
     box.style.cssText =
-      'position:fixed;right:16px;bottom:16px;z-index:2147483647;font:13px/1.4 -apple-system,system-ui,sans-serif;';
-    const btn = document.createElement('button');
-    btn.textContent = '采集本页';
-    btn.style.cssText =
-      'background:#1877f2;color:#fff;border:0;border-radius:8px;padding:10px 14px;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.2);font-weight:600;';
+      'position:fixed;right:16px;bottom:16px;z-index:2147483647;width:340px;' +
+      'font:13px/1.4 -apple-system,system-ui,sans-serif;background:#fff;color:#222;' +
+      'border-radius:10px;box-shadow:0 4px 16px rgba(0,0,0,.25);padding:10px;';
+
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;gap:6px;align-items:center;flex-wrap:wrap;';
+    const btn = mkBtn('采集本页', '#1877f2', '#fff');
+    const copyBtn = mkBtn('复制日志', '#f0f2f5', '#333');
+    const clearBtn = mkBtn('清空', '#f0f2f5', '#333');
+    row.appendChild(btn);
+    row.appendChild(copyBtn);
+    row.appendChild(clearBtn);
+
     const status = document.createElement('div');
     status.style.cssText =
-      'margin-top:8px;max-width:300px;background:#fff;color:#222;border-radius:8px;padding:8px 10px;box-shadow:0 2px 8px rgba(0,0,0,.15);display:none;white-space:pre-wrap;';
+      'margin-top:8px;font-weight:600;color:#1877f2;min-height:16px;white-space:pre-wrap;';
+
+    const log = document.createElement('pre');
+    log.style.cssText =
+      'margin:8px 0 0;max-height:220px;overflow:auto;background:#0d1117;color:#c9d1d9;' +
+      'border-radius:6px;padding:8px;font:11px/1.5 ui-monospace,Menlo,Consolas,monospace;' +
+      'white-space:pre-wrap;word-break:break-all;';
+
     btn.addEventListener('click', async () => {
       btn.disabled = true;
       try {
         const r = await collectAndReport((t) => setStatus(t));
-        if (r.ok) {
-          setStatus('✅ @' + r.handle + ' 新增 ' + r.added + ',共 ' + r.total + (r.note ? ' · ' + r.note : ''));
-        } else {
-          setStatus('❌ ' + (r.handle ? '@' + r.handle + ' ' : '') + r.error);
-        }
+        setStatus(
+          r.ok
+            ? '✅ @' + r.handle + ' 新增 ' + r.added + ',共 ' + r.total + (r.note ? ' · ' + r.note : '')
+            : '❌ ' + (r.handle ? '@' + r.handle + ' ' : '') + r.error,
+        );
       } catch (e) {
         setStatus('❌ 异常:' + e);
+        logLine('❌ 异常:' + e);
       } finally {
         setTimeout(() => (btn.disabled = false), 1500);
       }
     });
-    box.appendChild(btn);
+    copyBtn.addEventListener('click', async () => {
+      const text = _logBuf.join('\n');
+      try {
+        await navigator.clipboard.writeText(text);
+        copyBtn.textContent = '已复制';
+      } catch (e) {
+        // 剪贴板不可用时兜底:选中一个临时 textarea
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        document.body.appendChild(ta);
+        ta.select();
+        try {
+          document.execCommand('copy');
+          copyBtn.textContent = '已复制';
+        } catch (e2) {
+          copyBtn.textContent = '复制失败';
+        }
+        ta.remove();
+      }
+      setTimeout(() => (copyBtn.textContent = '复制日志'), 1500);
+    });
+    clearBtn.addEventListener('click', () => {
+      _logBuf = [];
+      _renderLog();
+      storageSet({ sp_log: [] });
+    });
+
+    box.appendChild(row);
     box.appendChild(status);
+    box.appendChild(log);
     document.body.appendChild(box);
-    _btn = btn;
     _status = status;
+    _logEl = log;
+    // 回填历史日志(批量跳转后接续)
+    storageGet(['sp_log']).then(({ sp_log }) => {
+      if (Array.isArray(sp_log) && sp_log.length && !_logBuf.length) {
+        _logBuf = sp_log.slice(-400);
+      }
+      _renderLog();
+    });
   }
   function setStatus(text) {
-    if (_status) {
-      _status.style.display = 'block';
-      _status.textContent = text;
-    }
+    if (_status) _status.textContent = text;
   }
 
   // ── 批量驱动:队列存 chrome.storage.local,跨页面导航存活 ──
@@ -485,9 +583,11 @@
     // 不在预期页面(首跳/被重定向)→ 导航到预期 handle,交给下次加载
     if (currentHandle() !== cur.handle) {
       setStatus(prog + ':跳转到 @' + cur.handle + ' …');
+      logLine('➡ ' + prog + ' 跳转到 @' + cur.handle);
       location.assign(cur.url);
       return;
     }
+    logLine('━━ ' + prog + ' @' + cur.handle + ' ━━');
 
     setStatus(prog + ':采集 @' + cur.handle + ' …');
     let r;
@@ -524,6 +624,7 @@
     await storageSet({ batch });
     const ok = batch.results.filter((x) => x.ok).length;
     const fail = batch.results.length - ok;
+    logLine('🎉 批量完成:成功 ' + ok + ' / 失败 ' + fail);
     let summary = '🎉 批量采集完成:成功 ' + ok + ' / 失败 ' + fail + '\n';
     summary += batch.results
       .map((x) =>
