@@ -32,3 +32,6 @@ __pycache__/
 .DS_Store
 *.log
 coverage/
+
+# 扩展打包产物
+extension/dist/
