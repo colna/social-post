@@ -404,6 +404,7 @@ export default function HomePage() {
               search={false}
               options={false}
               params={{ accountId: drawerAccount.id }}
+              scroll={{ x: "max-content" }}
               request={async (p) => {
                 const r = await api.posts(
                   drawerAccount.id,
