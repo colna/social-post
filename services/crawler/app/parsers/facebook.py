@@ -305,6 +305,17 @@ def _post_comment_count(node: dict) -> int | None:
     return None
 
 
+def _post_share_count(node: dict) -> int | None:
+    """分享/转发数 best-effort:优先 feedback 里的 share_count.count,退回 reshare_count。"""
+    counts = _int_counts(_find_all(node, "share_count"))
+    if counts:
+        return max(counts)
+    counts = _int_counts(_find_all(node, "reshare_count"))
+    if counts:
+        return max(counts)
+    return None
+
+
 def _parse_node(node: dict) -> PostItem:
     post_id = str(node.get("post_id") or "")
     ct = _to_int(node.get("creation_time"))
@@ -320,6 +331,7 @@ def _parse_node(node: dict) -> PostItem:
         caption=_post_caption(node),
         like_count=max(reactions) if reactions else None,
         comment_count=_post_comment_count(node),
+        share_count=_post_share_count(node),
         taken_at=taken_at,
         raw={"post_id": post_id, "permalink_url": node.get("permalink_url")},
     )

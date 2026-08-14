@@ -112,6 +112,13 @@
     }
     return null;
   }
+  function pickShareCount(node) {
+    let c = intCounts(findAll(node, 'share_count'));
+    if (c.length) return Math.max.apply(null, c);
+    c = intCounts(findAll(node, 'reshare_count'));
+    if (c.length) return Math.max.apply(null, c);
+    return null;
+  }
   function parseNode(node) {
     const pid = String(node.post_id || '');
     const reactions = intCounts(findAll(node, 'reaction_count'));
@@ -123,6 +130,7 @@
       caption: pickCaption(node),
       likeCount: reactions.length ? Math.max.apply(null, reactions) : null,
       commentCount: pickCommentCount(node),
+      shareCount: pickShareCount(node),
       takenAt: typeof node.creation_time === 'number' ? node.creation_time : null,
     };
   }

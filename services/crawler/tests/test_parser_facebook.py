@@ -78,6 +78,7 @@ def test_timeline_carousel_post() -> None:
     assert post.caption == "Meet the Team: Orla caption"
     assert post.like_count == 12
     assert post.comment_count == 3
+    assert post.share_count == 4
     assert "fbcdn" in post.cover_url and "111" in post.cover_url
     assert post.taken_at is not None
 
@@ -87,6 +88,7 @@ def test_timeline_video_post() -> None:
     assert post.type == "video"
     assert post.like_count == 5
     assert post.comment_count is None  # 关评/无评论
+    assert post.share_count is None  # 无 share_count → None
     assert "fbcdn" in post.cover_url
 
 
