@@ -16,10 +16,11 @@ export class IngestService {
 
   async ingestFacebook(dto: IngestFacebookDto) {
     const platformKey = 'facebook';
-    // 保证 platform 行存在(ingest 自足,不依赖是否 seed 过)
+    // 保证 platform 行存在且启用(ingest 自足,不依赖是否 seed 过;
+    // 采集到数据即把该平台 enabled=true,前端菜单随之激活)
     await this.prisma.platform.upsert({
       where: { key: platformKey },
-      update: {},
+      update: { enabled: true },
       create: { key: platformKey, name: 'Facebook', enabled: true },
     });
 
