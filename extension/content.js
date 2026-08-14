@@ -5,7 +5,7 @@
   'use strict';
 
   const DEFAULTS = {
-    sp_server: 'http://localhost:3001/api',
+    sp_server: 'https://social-post-server.vercel.app/api',
     sp_token: 'change-me-ingest-token',
   };
   const cfg = {
