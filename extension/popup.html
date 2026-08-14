@@ -1,0 +1,66 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      body {
+        font: 13px/1.5 -apple-system, system-ui, sans-serif;
+        width: 300px;
+        margin: 0;
+        padding: 14px;
+        color: #222;
+      }
+      h1 {
+        font-size: 14px;
+        margin: 0 0 12px;
+      }
+      label {
+        display: block;
+        margin: 10px 0 4px;
+        font-weight: 600;
+      }
+      input {
+        width: 100%;
+        box-sizing: border-box;
+        padding: 7px 8px;
+        border: 1px solid #ccc;
+        border-radius: 6px;
+        font: inherit;
+      }
+      .hint {
+        color: #888;
+        font-size: 11px;
+        margin-top: 3px;
+      }
+      button {
+        margin-top: 14px;
+        width: 100%;
+        background: #1877f2;
+        color: #fff;
+        border: 0;
+        border-radius: 6px;
+        padding: 9px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      #saved {
+        color: #1a7f37;
+        text-align: center;
+        margin-top: 8px;
+        min-height: 16px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>social-post 采集设置</h1>
+    <label for="server">server API 基址</label>
+    <input id="server" placeholder="http://localhost:3001/api" />
+    <div class="hint">social-post server 的 API 根路径</div>
+    <label for="token">ingest token</label>
+    <input id="token" placeholder="change-me-ingest-token" />
+    <div class="hint">须与 server 环境变量 INGEST_TOKEN 一致</div>
+    <button id="save">保存</button>
+    <div id="saved"></div>
+    <script src="popup.js"></script>
+  </body>
+</html>

@@ -92,4 +92,32 @@ FB Comet 分享数在 feedback 的 `share_count.count`(退回 `reshare_count`),�
 | E.2 采集脚本 pickShareCount | ✅ | 2026-08-14 | — | `fb-collector.user.js`;server ingest 已支持接收 |
 | E.3 抓取弹窗改 DateTime 精确到时分 | ✅ | 2026-08-14 | tsc/lint/11 passed | `ProFormDateTimeRangePicker`,since/until 用确切时间点 |
 | E.4 全量测试 | ✅ | 2026-08-14 | crawler 32 + web 11 | tsc/lint 全过 |
-| E.5 实机走查 uksmartgroup | ⬜ | | | 待用户装/更新脚本在 FB 主页点采集,验证「转发」列有值 |
+| E.5 实机走查 uksmartgroup | ⬜ | | | 待用户装扩展在 FB 主页点采集,验证「转发」列有值 |
+
+## 六 · Phase F:自建 Chrome 扩展(替代 Tampermonkey,2026-08-14)
+
+用户不想依赖 Tampermonkey,改自建 MV3 扩展。采集/解析逻辑与 `scripts/fb-collector.user.js`、`parsers/facebook.py` **一字不改地复用**,只换「壳」。
+
+**目录 `extension/`(MV3,纯静态,无需构建)**:
+- `manifest.json`:content script 注入 `https://www.facebook.com/*`;`permissions:["storage"]`;`host_permissions:["http://localhost/*","http://127.0.0.1/*"]`(部署到远端 server 时在此加对应 host)。
+- `content.js`:搬全部采集逻辑。差异——① 配置从 `GM_getValue` → `chrome.storage.local`;② 跨域 POST 从 `GM_xmlhttpRequest` → `chrome.runtime.sendMessage` 交给 background。
+- `background.js`:service worker,收 `{type:'ingest'}` 消息做跨域 fetch(有 host_permissions → 绕过 CORS,**server 零改动、无需开 CORS**)。
+- `popup.html`/`popup.js`:配置页(server API 基址 + ingest token),存 `chrome.storage.local`。
+
+**关键机制**:content script 与页面**同源**,同源 `fetch('/api/graphql/',{credentials:'include'})` 由浏览器自动带 httpOnly cookie(httpOnly 只挡 JS 读 `document.cookie`,不挡网络附带)→ GraphQL 采集可在 content script 跑;唯一跨域的是打本地 server,走 background。
+
+**安装(开发者模式加载已解压扩展)**:
+1. Chrome 地址栏进 `chrome://extensions`,右上角开「开发者模式」。
+2. 点「加载已解压的扩展程序」→ 选 `social-post/extension/` 目录。
+3. 点扩展图标 → popup 填 server API 基址(默认 `http://localhost:3001/api`)+ ingest token(与 server `INGEST_TOKEN` 一致)→ 保存。
+4. 登录 facebook.com → 打开目标主页(如 `/uksmartgroup`)→ 右下角「采集到 social-post」按钮 → 点。
+
+> 前提:social-post server 已在运行且 `INGEST_TOKEN` 与 popup 里一致。
+> 旧 `scripts/fb-collector.user.js` 保留作 Tampermonkey 备选,逻辑等价。
+
+| Task | 状态 | 完成时间 | 测试 | 备注 |
+|------|------|----------|------|------|
+| F.1 MV3 manifest + 目录 | ✅ | 2026-08-14 | node --check | content/background/popup |
+| F.2 content.js 复用采集逻辑 | ✅ | 2026-08-14 | node --check | chrome.storage + 消息转发 |
+| F.3 background 跨域转发 + popup 配置页 | ✅ | 2026-08-14 | node --check | server 零改动 |
+| F.4 实机走查 | ⬜ | | | 与 E.5 合并:装扩展点采集验证 |
