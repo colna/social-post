@@ -121,3 +121,29 @@ FB Comet 分享数在 feedback 的 `share_count.count`(退回 `reshare_count`),�
 | F.2 content.js 复用采集逻辑 | ✅ | 2026-08-14 | node --check | chrome.storage + 消息转发 |
 | F.3 background 跨域转发 + popup 配置页 | ✅ | 2026-08-14 | node --check | server 零改动 |
 | F.4 实机走查 | ⬜ | | | 与 E.5 合并:装扩展点采集验证 |
+
+## 七 · Phase G:扩展支持批量主页 + 自动跳转采集(2026-08-14)
+
+需求:popup 填**多个主页链接**(每行一个)→ 依次进入每个主页采集帖子 → 每个采完经 ingest 接口上报 → 自动跳下一个 → 全部完成后表格可见。
+
+**状态机(存 `chrome.storage.local.batch`,跨页面导航存活)**:
+`batch = { running, items:[{handle,url}], index, results:[{handle,ok,added,total,error}] }`
+
+**流程**:
+1. popup 解析文本域每行 → `{handle,url}`(支持完整链接或裸 handle;去重;不支持 `profile.php` 数字 id 主页)→ 存 `batch{running:true,index:0}` → `chrome.tabs.update` 把当前标签导航到第 1 个主页。
+2. content script **每次页面加载**跑 `batchTick()`:读 batch;若 running 且当前 `currentHandle()==items[index].handle` → `waitContext`(重试抠 fb_dtsg/doc_id/userID,应对 SPA 首屏未就绪)→ `collectAndReport` 采集+上报 → 结果 push 进 `batch.results`、`index++` 存回 → 若还有下一个,节流 3s 后 `location.assign(next.url)`;否则 `finishBatch`。
+3. 页面不匹配预期(首跳/被重定向)→ 先 `location.assign` 到预期 handle,交给下次加载。
+4. 右下角面板显示实时进度;popup 每 1.5s 刷新 `batch.results` 摘要;「停止批量」置 `running=false`。
+
+**关键点**:
+- `collect` 重构为 `collectAndReport(setStatus)` 返回结果对象(不 alert),手动按钮与批量共用。
+- 重入保护:`_batchRan` 每页只跑一次;popup 兜底 `batch-start` 消息仅在 `!_batchRan` 时补触发,避免与页面加载的 batchTick 并发双跑。
+- manifest 加 `tabs` 权限(popup 导航当前标签)。
+- 手动单页按钮改名「采集本页」,保留。
+
+| Task | 状态 | 完成时间 | 测试 | 备注 |
+|------|------|----------|------|------|
+| G.1 collect 重构为返回结果 + waitContext 就绪重试 | ✅ | 2026-08-14 | node --check | 手动/批量共用 |
+| G.2 批量状态机 + 自动跳转驱动 | ✅ | 2026-08-14 | node --check | storage 存活 + 重入保护 |
+| G.3 popup 批量 UI + 解析 + 进度刷新 | ✅ | 2026-08-14 | node --check | 多行链接/handle |
+| G.4 实机走查(多主页) | ⬜ | | | 待用户填多个链接跑一遍 |

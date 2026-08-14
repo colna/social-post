@@ -12,11 +12,19 @@
     pageSize: 8, // 单次 GraphQL count
     maxPages: 25, // 翻页上限(FB 可能翻不了几页就限流)
     pageDelayMs: 1200, // 每页间隔,拟人节流,降低触发风控
+    readyTries: 12, // 页面就绪重试次数(每次 1.5s)
+    hopDelayMs: 3000, // 采集完一个到跳下一个的间隔
   };
   function getConfig() {
     return new Promise((resolve) =>
       chrome.storage.local.get(DEFAULTS, (c) => resolve(c)),
     );
+  }
+  function storageGet(keys) {
+    return new Promise((resolve) => chrome.storage.local.get(keys, resolve));
+  }
+  function storageSet(obj) {
+    return new Promise((resolve) => chrome.storage.local.set(obj, resolve));
   }
 
   // ── 递归工具(与 parsers/facebook.py 同逻辑)──
@@ -317,20 +325,30 @@
     );
   }
 
-  // ── 采集主流程 ──
-  async function collect(setStatus) {
+  // ── 等待页面就绪:FB SPA 首屏可能还没塞入 timeline 上下文,重试抠 ──
+  async function waitContext(maxTries) {
+    for (let i = 0; i < (maxTries || 12); i++) {
+      const html = document.documentElement.outerHTML;
+      const ctx = extractContext(html);
+      if (ctx.fb_dtsg && ctx.doc_id && ctx.user_id) return { ctx, html };
+      await sleep(1500);
+    }
+    return null;
+  }
+
+  // ── 采集当前页并上报,返回结果对象(不 alert,供手动/批量共用)──
+  async function collectAndReport(setStatus) {
     const handle = currentHandle();
     if (!handle) {
-      alert('当前页面不是可识别的 FB 主页(打开某个主页 /<handle>/ 再点采集)');
-      return;
+      return { ok: false, error: '当前页面不是可识别的 FB 主页' };
     }
     const conf = await getConfig();
-    const html = document.documentElement.outerHTML;
-    const ctx = extractContext(html);
-    if (!ctx.fb_dtsg || !ctx.doc_id || !ctx.user_id) {
-      alert('未能从页面抠到 fb_dtsg/doc_id/userID,刷新页面后重试');
-      return;
+    setStatus('等待页面就绪…');
+    const ready = await waitContext(cfg.readyTries);
+    if (!ready) {
+      return { ok: false, handle, error: '未能抠到 fb_dtsg/doc_id/userID(页面未就绪或需登录)' };
     }
+    const { ctx, html } = ready;
 
     const all = [];
     const seen = new Set();
@@ -354,7 +372,7 @@
         break;
       }
       if (raw.indexOf('"error":1357054') >= 0 || raw.indexOf('"errors"') === 0) {
-        stopped = 'FB 限流(1357054),停止翻页,已采集 ' + all.length + ' 帖';
+        stopped = 'FB 限流(1357054),停止翻页';
         break;
       }
       const { posts, cursor: next, hasNext } = parseTimeline(raw);
@@ -373,8 +391,7 @@
     }
 
     if (!all.length) {
-      alert('没采集到帖子(可能被限流或该主页无公开帖)');
-      return;
+      return { ok: false, handle, error: '没采集到帖子(被限流或无公开帖)' + (stopped ? ' · ' + stopped : '') };
     }
 
     const payload = {
@@ -388,28 +405,25 @@
     };
     setStatus('入库中…(' + all.length + ' 帖)');
     const r = await postToServer(conf.sp_server, conf.sp_token, payload);
-    if (r.ok) {
-      let res = {};
-      try {
-        res = JSON.parse(r.text);
-      } catch (e) {}
-      setStatus(
-        '✅ 入库成功:新增 ' +
-          (res.added != null ? res.added : '?') +
-          ',共 ' +
-          (res.total != null ? res.total : '?') +
-          (stopped ? ' · ' + stopped : ''),
-        true,
-      );
-    } else {
-      setStatus(
-        '❌ 入库失败 ' + r.status + ':' + String(r.text).slice(0, 140),
-        true,
-      );
+    if (!r.ok) {
+      return { ok: false, handle, error: '入库失败 ' + r.status + ':' + String(r.text).slice(0, 120) };
     }
+    let res = {};
+    try {
+      res = JSON.parse(r.text);
+    } catch (e) {}
+    return {
+      ok: true,
+      handle,
+      added: res.added != null ? res.added : null,
+      total: res.total != null ? res.total : null,
+      note: stopped || '',
+    };
   }
 
-  // ── 浮动按钮 UI ──
+  // ── 浮动面板 UI(手动按钮 + 状态,批量进度也走这里)──
+  let _btn = null;
+  let _status = null;
   function mountButton() {
     if (document.getElementById('sp-fb-collect')) return;
     if (!document.body) return;
@@ -418,23 +432,23 @@
     box.style.cssText =
       'position:fixed;right:16px;bottom:16px;z-index:2147483647;font:13px/1.4 -apple-system,system-ui,sans-serif;';
     const btn = document.createElement('button');
-    btn.textContent = '采集到 social-post';
+    btn.textContent = '采集本页';
     btn.style.cssText =
       'background:#1877f2;color:#fff;border:0;border-radius:8px;padding:10px 14px;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.2);font-weight:600;';
     const status = document.createElement('div');
     status.style.cssText =
-      'margin-top:8px;max-width:280px;background:#fff;color:#222;border-radius:8px;padding:8px 10px;box-shadow:0 2px 8px rgba(0,0,0,.15);display:none;';
-    function setStatus(text, done) {
-      status.style.display = 'block';
-      status.textContent = text;
-      if (done) btn.disabled = false;
-    }
+      'margin-top:8px;max-width:300px;background:#fff;color:#222;border-radius:8px;padding:8px 10px;box-shadow:0 2px 8px rgba(0,0,0,.15);display:none;white-space:pre-wrap;';
     btn.addEventListener('click', async () => {
       btn.disabled = true;
       try {
-        await collect(setStatus);
+        const r = await collectAndReport((t) => setStatus(t));
+        if (r.ok) {
+          setStatus('✅ @' + r.handle + ' 新增 ' + r.added + ',共 ' + r.total + (r.note ? ' · ' + r.note : ''));
+        } else {
+          setStatus('❌ ' + (r.handle ? '@' + r.handle + ' ' : '') + r.error);
+        }
       } catch (e) {
-        setStatus('❌ 异常:' + e, true);
+        setStatus('❌ 异常:' + e);
       } finally {
         setTimeout(() => (btn.disabled = false), 1500);
       }
@@ -442,9 +456,94 @@
     box.appendChild(btn);
     box.appendChild(status);
     document.body.appendChild(box);
+    _btn = btn;
+    _status = status;
   }
+  function setStatus(text) {
+    if (_status) {
+      _status.style.display = 'block';
+      _status.textContent = text;
+    }
+  }
+
+  // ── 批量驱动:队列存 chrome.storage.local,跨页面导航存活 ──
+  // batch = { running, items:[{handle,url}], index, results:[{handle,ok,added,total,error}] }
+  let _batchRan = false; // 每次页面加载只跑一次
+  async function batchTick() {
+    const { batch } = await storageGet(['batch']);
+    if (!batch || !batch.running) return;
+    if (_batchRan) return;
+    _batchRan = true;
+
+    const cur = batch.items[batch.index];
+    if (!cur) {
+      await finishBatch(batch);
+      return;
+    }
+    const prog = '批量 ' + (batch.index + 1) + '/' + batch.items.length;
+
+    // 不在预期页面(首跳/被重定向)→ 导航到预期 handle,交给下次加载
+    if (currentHandle() !== cur.handle) {
+      setStatus(prog + ':跳转到 @' + cur.handle + ' …');
+      location.assign(cur.url);
+      return;
+    }
+
+    setStatus(prog + ':采集 @' + cur.handle + ' …');
+    let r;
+    try {
+      r = await collectAndReport((t) => setStatus(prog + ' @' + cur.handle + ':' + t));
+    } catch (e) {
+      r = { ok: false, handle: cur.handle, error: '异常:' + e };
+    }
+    batch.results.push({
+      handle: cur.handle,
+      ok: r.ok,
+      added: r.added != null ? r.added : null,
+      total: r.total != null ? r.total : null,
+      error: r.error || '',
+    });
+    batch.index += 1;
+    await storageSet({ batch });
+
+    if (batch.index >= batch.items.length) {
+      await finishBatch(batch);
+      return;
+    }
+    const next = batch.items[batch.index];
+    const tip = r.ok
+      ? '✅ @' + cur.handle + ' 新增 ' + r.added
+      : '⚠️ @' + cur.handle + ' ' + r.error;
+    setStatus(prog + ' 完成 · ' + tip + '\n' + cfg.hopDelayMs / 1000 + 's 后跳 @' + next.handle + ' …');
+    await sleep(cfg.hopDelayMs);
+    location.assign(next.url);
+  }
+
+  async function finishBatch(batch) {
+    batch.running = false;
+    await storageSet({ batch });
+    const ok = batch.results.filter((x) => x.ok).length;
+    const fail = batch.results.length - ok;
+    let summary = '🎉 批量采集完成:成功 ' + ok + ' / 失败 ' + fail + '\n';
+    summary += batch.results
+      .map((x) =>
+        (x.ok ? '✅ @' + x.handle + ' +' + x.added : '❌ @' + x.handle + ' ' + x.error),
+      )
+      .join('\n');
+    setStatus(summary);
+  }
+
+  // 允许 popup 通过消息即时启动批量(popup 已把 batch 存进 storage 并导航本 tab)
+  chrome.runtime.onMessage.addListener((msg) => {
+    // 仅当本页加载时的 batchTick 尚未触发(如同 URL 未 reload)才补一枪,避免并发双跑
+    if (msg && msg.type === 'batch-start' && !_batchRan) {
+      batchTick();
+    }
+  });
 
   mountButton();
   // FB 是 SPA,路由变化后按钮可能被卸载,定时补挂
   setInterval(mountButton, 3000);
+  // 页面加载即检查是否处于批量流程中
+  batchTick();
 })();

@@ -5,21 +5,28 @@
     <style>
       body {
         font: 13px/1.5 -apple-system, system-ui, sans-serif;
-        width: 300px;
+        width: 320px;
         margin: 0;
         padding: 14px;
         color: #222;
       }
       h1 {
         font-size: 14px;
-        margin: 0 0 12px;
+        margin: 0 0 10px;
+      }
+      h2 {
+        font-size: 13px;
+        margin: 16px 0 6px;
+        padding-top: 12px;
+        border-top: 1px solid #eee;
       }
       label {
         display: block;
-        margin: 10px 0 4px;
+        margin: 8px 0 4px;
         font-weight: 600;
       }
-      input {
+      input,
+      textarea {
         width: 100%;
         box-sizing: border-box;
         padding: 7px 8px;
@@ -27,40 +34,66 @@
         border-radius: 6px;
         font: inherit;
       }
+      textarea {
+        resize: vertical;
+        min-height: 84px;
+      }
       .hint {
         color: #888;
         font-size: 11px;
         margin-top: 3px;
       }
       button {
-        margin-top: 14px;
+        margin-top: 10px;
         width: 100%;
-        background: #1877f2;
-        color: #fff;
         border: 0;
         border-radius: 6px;
         padding: 9px;
         font-weight: 600;
         cursor: pointer;
       }
-      #saved {
+      .primary {
+        background: #1877f2;
+        color: #fff;
+      }
+      .ghost {
+        background: #f0f2f5;
+        color: #333;
+      }
+      #saved,
+      #batchMsg {
         color: #1a7f37;
         text-align: center;
         margin-top: 8px;
         min-height: 16px;
+        white-space: pre-wrap;
       }
     </style>
   </head>
   <body>
-    <h1>social-post 采集设置</h1>
+    <h1>social-post 采集</h1>
+
     <label for="server">server API 基址</label>
     <input id="server" placeholder="http://localhost:3001/api" />
-    <div class="hint">social-post server 的 API 根路径</div>
     <label for="token">ingest token</label>
     <input id="token" placeholder="change-me-ingest-token" />
     <div class="hint">须与 server 环境变量 INGEST_TOKEN 一致</div>
-    <button id="save">保存</button>
+    <button id="save" class="ghost">保存配置</button>
     <div id="saved"></div>
+
+    <h2>批量采集</h2>
+    <label for="targets">主页链接 / handle(每行一个)</label>
+    <textarea
+      id="targets"
+      placeholder="https://www.facebook.com/uksmartgroup&#10;nasa&#10;https://www.facebook.com/xxx"
+    ></textarea>
+    <div class="hint">
+      进入每个主页自动采集 → 上报 → 跳下一个。需先在当前窗口打开一个 facebook.com 标签页并登录。
+    </div>
+    <button id="start" class="primary">开始批量采集</button>
+    <button id="stop" class="ghost">停止批量</button>
+    <div id="batchMsg"></div>
+
     <script src="popup.js"></script>
   </body>
 </html>
