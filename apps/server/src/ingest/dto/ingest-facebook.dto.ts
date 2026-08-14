@@ -38,6 +38,10 @@ export class IngestPostDto {
 
   @IsOptional()
   @IsInt()
+  shareCount?: number; // 转发数
+
+  @IsOptional()
+  @IsInt()
   takenAt?: number; // unix 秒
 }
 

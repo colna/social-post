@@ -51,6 +51,7 @@ def test_image_post(fixture_json: dict) -> None:
     # edge_liked_by 优先
     assert post.like_count == 5000
     assert post.comment_count == 120
+    assert post.share_count == 42
     assert post.taken_at == datetime(2023, 11, 14, 22, 13, 20, tzinfo=timezone.utc)
 
 
@@ -65,6 +66,7 @@ def test_reel_post(fixture_json: dict) -> None:
     # 无 edge_liked_by,退回 preview_like
     assert post.like_count == 8800
     assert post.comment_count == 240
+    assert post.share_count is None  # 无 reshare_count → None
     assert post.taken_at == datetime.fromtimestamp(1700100000, tz=timezone.utc)
 
 
@@ -109,6 +111,7 @@ def test_parse_feed_items_types_and_fields() -> None:
                 "media_type": 1,  # 图片
                 "like_count": 10,
                 "comment_count": 2,
+                "reshare_count": 3,  # 转发数
                 "taken_at": 1700000000,
                 "caption": {"text": "hello"},
                 "image_versions2": {"candidates": [{"url": "https://cdn/a.jpg"}]},
@@ -136,9 +139,12 @@ def test_parse_feed_items_types_and_fields() -> None:
     assert posts[0].url == "https://www.instagram.com/p/AAA/"
     assert posts[0].caption == "hello"
     assert posts[0].like_count == 10
+    assert posts[0].share_count == 3
     assert posts[0].cover_url == "https://cdn/a.jpg"
     assert posts[1].url == "https://www.instagram.com/reel/BBB/"
     assert posts[1].caption is None
+    assert posts[1].share_count is None  # 无 reshare_count → None
+
     assert posts[2].cover_url == "https://cdn/c1.jpg"
 
 

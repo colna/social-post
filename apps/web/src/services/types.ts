@@ -32,6 +32,7 @@ export interface Post {
   caption?: string | null;
   likeCount?: number | null;
   commentCount?: number | null;
+  shareCount?: number | null;
   takenAt?: string | null;
   createdAt: string;
 }

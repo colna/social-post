@@ -217,6 +217,12 @@ export default function HomePage() {
       render: (_, r) => formatCount(r.commentCount),
     },
     {
+      title: '转发',
+      dataIndex: 'shareCount',
+      width: 80,
+      render: (_, r) => formatCount(r.shareCount),
+    },
+    {
       title: '发布时间',
       dataIndex: 'takenAt',
       width: 170,

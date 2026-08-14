@@ -36,6 +36,7 @@ class PostItem(CamelModel):
     caption: str | None = None
     like_count: int | None = None
     comment_count: int | None = None
+    share_count: int | None = None  # 转发数(IG reshare_count,拿不到为 None)
     taken_at: datetime | None = None
     raw: dict | None = None
 

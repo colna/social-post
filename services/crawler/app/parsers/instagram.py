@@ -44,6 +44,14 @@ def _extract_like_count(node: dict) -> int | None:
     return _to_int(preview)
 
 
+def _extract_share_count(node: dict) -> int | None:
+    """转发数:优先 reshare_count,退回 share_count(IG 多数场景不返回,拿不到为 None)。"""
+    reshare = node.get("reshare_count")
+    if reshare is not None:
+        return _to_int(reshare)
+    return _to_int(node.get("share_count"))
+
+
 def _determine_type(node: dict, is_reel: bool) -> str:
     """按 __typename / is_video / product_type 判定帖子类型。"""
     typename = node.get("__typename")
@@ -77,6 +85,7 @@ def _parse_post(node: dict) -> PostItem:
         caption=_extract_caption(node),
         like_count=_extract_like_count(node),
         comment_count=_to_int((node.get("edge_media_to_comment") or {}).get("count")),
+        share_count=_extract_share_count(node),
         taken_at=taken_at,
         raw=node,
     )
@@ -187,6 +196,7 @@ def _parse_feed_item(item: dict) -> PostItem:
         caption=caption or None,
         like_count=_to_int(item.get("like_count")),
         comment_count=_to_int(item.get("comment_count")),
+        share_count=_extract_share_count(item),
         taken_at=taken_at,
         raw=item,
     )

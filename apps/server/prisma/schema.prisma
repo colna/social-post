@@ -58,6 +58,7 @@ model Post {
   caption      String? // 完整文案
   likeCount    Int?
   commentCount Int?
+  shareCount   Int? // 转发数
   takenAt      DateTime? // 发布时间
   raw          Json? // 原始节点,便于后续扩展
   createdAt    DateTime  @default(now())

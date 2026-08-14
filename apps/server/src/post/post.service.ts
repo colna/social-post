@@ -85,6 +85,7 @@ export class PostService {
       caption: item.caption ?? null,
       likeCount: item.likeCount ?? null,
       commentCount: item.commentCount ?? null,
+      shareCount: item.shareCount ?? null,
       takenAt: item.takenAt ? new Date(item.takenAt) : null,
       raw: (item.raw ?? undefined) as Prisma.InputJsonValue | undefined,
     };

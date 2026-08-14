@@ -22,6 +22,7 @@ export interface CrawlerPostItem {
   caption?: string | null;
   likeCount?: number | null;
   commentCount?: number | null;
+  shareCount?: number | null; // 转发数
   takenAt?: string | null; // ISO
   raw?: Record<string, unknown> | null;
 }

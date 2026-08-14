@@ -41,7 +41,14 @@ describe('PostService', () => {
     crawler.crawl.mockResolvedValue({
       account: { handle: 'nasa', displayName: 'NASA', followerCount: 100 },
       posts: [
-        { shortcode: 'p1', url: 'u1', type: 'image', coverUrl: 'c1', takenAt: '2024-01-01T00:00:00Z' },
+        {
+          shortcode: 'p1',
+          url: 'u1',
+          type: 'image',
+          coverUrl: 'c1',
+          shareCount: 7,
+          takenAt: '2024-01-01T00:00:00Z',
+        },
         { shortcode: 'p2', url: 'u2', type: 'video', coverUrl: 'c2', takenAt: null },
       ],
       fetchedAt: 'x',
@@ -59,6 +66,13 @@ describe('PostService', () => {
     });
     expect(prisma.account.update).toHaveBeenCalledTimes(1);
     expect(prisma.post.create).toHaveBeenCalledTimes(2);
+    // 转发数按序写入:p1=7、p2 无 → null
+    expect(prisma.post.create).toHaveBeenNthCalledWith(1, {
+      data: expect.objectContaining({ shareCount: 7 }),
+    });
+    expect(prisma.post.create).toHaveBeenNthCalledWith(2, {
+      data: expect.objectContaining({ shareCount: null }),
+    });
     expect(res).toEqual({ accountId: 'a1', fetched: 2, added: 2, total: 2 });
   });
 
