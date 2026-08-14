@@ -10,9 +10,10 @@
   };
   const cfg = {
     hopDelayMs: 3000, // 采集完一个到跳下一个的间隔
-    maxScrolls: 120, // 滚动采集最大滚动轮数
-    scrollWaitMs: 2500, // 每轮滚动后等待 FB 懒加载
-    scrollStale: 4, // 连续 N 轮无新增则停止
+    maxScrolls: 150, // 滚动采集最大滚动轮数
+    scrollWaitMs: 3000, // 每轮滚动后等待 FB 懒加载
+    scrollStale: 6, // 连续 N 轮无新增则停止
+    minScrolls: 6, // 至少滚这么多轮再允许因"无新增"停止(给 FB 反应时间)
     maxPosts: 0, // 单主页最多采多少帖,0=不限(由 maxScrolls/stale 兜底)
   };
   function getConfig() {
@@ -300,11 +301,25 @@
   let _cap = new Map(); // shortcode → PostItem
   let _captureOn = false;
   let _scrollAbort = false;
+  let _injectLoaded = false;
+  let _gqlSeen = 0; // 见到的 /graphql 请求数
+  let _capMsgs = 0; // 命中 timeline 的响应数
 
   window.addEventListener('message', (ev) => {
     if (ev.source !== window) return;
     const d = ev.data;
-    if (!d || d.source !== 'sp-fb-cap' || !_captureOn) return;
+    if (!d) return;
+    if (d.source === 'sp-fb-hook') {
+      if (d.kind === 'loaded') {
+        _injectLoaded = true;
+        logLine('✅ inject 已挂载(MAIN world),fetch/XHR 已 hook');
+      } else if (d.kind === 'gql') {
+        _gqlSeen++;
+      }
+      return;
+    }
+    if (d.source !== 'sp-fb-cap' || !_captureOn) return;
+    _capMsgs++;
     try {
       const { posts } = parseTimeline(d.body);
       let fresh = 0;
@@ -354,7 +369,10 @@
 
     _cap = new Map();
     _scrollAbort = false;
+    _gqlSeen = 0;
+    _capMsgs = 0;
     _captureOn = true;
+    logLine('inject 挂载状态:' + (_injectLoaded ? '已挂载' : '⚠️ 尚未收到挂载信号'));
     // seed:页面内嵌的初始帖
     for (const p of embeddedPosts(html)) {
       if (p.shortcode) _cap.set(p.shortcode, p);
@@ -371,14 +389,20 @@
       scrollStep();
       await sleep(cfg.scrollWaitMs);
       const size = _cap.size;
-      setStatus('滚动 ' + (i + 1) + '/' + cfg.maxScrolls + ' · 已 ' + size + ' 帖');
+      setStatus(
+        '滚动 ' + (i + 1) + '/' + cfg.maxScrolls + ' · 已 ' + size +
+        ' 帖(graphql ' + _gqlSeen + '/timeline ' + _capMsgs + ')',
+      );
+      if ((i + 1) % 5 === 0)
+        logLine('… 滚动 ' + (i + 1) + ' 轮:已 ' + size + ' 帖,见 graphql ' + _gqlSeen + ',timeline 响应 ' + _capMsgs);
       if (size > last) {
         last = size;
         stale = 0;
       } else {
         stale++;
       }
-      if (stale >= cfg.scrollStale) {
+      // 至少滚 minScrolls 轮再允许因"无新增"停止,给 FB 反应时间
+      if (i + 1 >= cfg.minScrolls && stale >= cfg.scrollStale) {
         logLine('连续 ' + stale + ' 轮无新增,判定到底,停止滚动');
         break;
       }
@@ -390,9 +414,19 @@
     _captureOn = false;
 
     const all = [..._cap.values()];
-    logLine('滚动结束,共 ' + all.length + ' 帖');
-    if (!all.length) {
-      return { ok: false, handle, error: '没采集到帖子(未捕获到 timeline 响应)' };
+    logLine('滚动结束,共 ' + all.length + ' 帖(见 graphql ' + _gqlSeen + ',timeline 响应 ' + _capMsgs + ')');
+    if (!_injectLoaded)
+      logLine('⚠️ 全程未收到 inject 挂载信号:MAIN world 注入可能未生效(Chrome<111 或被 CSP 拦)');
+    else if (_gqlSeen === 0)
+      logLine('⚠️ 全程没见到任何 /graphql 请求:FB 可能没触发懒加载(页面没滚动?)或走了别的通道');
+    else if (_capMsgs === 0)
+      logLine('⚠️ 见到 graphql 但没有 timeline 响应:该主页 feed 结构可能不同,需调整匹配');
+    if (all.length <= 1) {
+      return {
+        ok: false,
+        handle,
+        error: '只拿到内嵌 ' + all.length + ' 帖(graphql ' + _gqlSeen + '/timeline ' + _capMsgs + ',inject=' + _injectLoaded + ')',
+      };
     }
 
     const payload = {
