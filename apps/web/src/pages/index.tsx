@@ -444,8 +444,11 @@ export default function HomePage() {
           if (!target) return true;
           const opts: { maxPosts?: number; since?: number; until?: number } = {};
           if (v.range?.[0] && v.range?.[1]) {
-            opts.since = v.range[0].unix();
-            opts.until = v.range[1].unix();
+            // ProFormDateTimeRangePicker 在部分 pro-components 版本下提交的是格式化字符串
+            // (dateFormatter={false} 也未必保住 dayjs 对象),故统一用 dayjs() 兜底再取 unix,
+            // 兼容 dayjs / 字符串 / Date 三种取值,避免 e.range[0].unix is not a function。
+            opts.since = dayjs(v.range[0]).unix();
+            opts.until = dayjs(v.range[1]).unix();
           }
           if (v.limit) opts.maxPosts = v.limit;
           setCrawlTarget(null);
